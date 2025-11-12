@@ -8,7 +8,7 @@ app = FastAPI()
 # are allowed to make requests to your API.
 origins = [
     "http://localhost:5173",  # Your local Vue app
-    "https://famous-zuccutto-7b8f5c.netlify.app/" # We will add your Netlify URL here later
+    "https://code-consensus.netlify.app" # We will add your Netlify URL here later
 ]
 
 app.add_middleware(
