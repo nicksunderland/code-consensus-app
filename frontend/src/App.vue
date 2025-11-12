@@ -11,7 +11,7 @@ const error = ref(null);
 // Vite's 'import.meta.env.DEV' is true when running 'npm run dev'.
 const BASE_URL = import.meta.env.DEV
     ? 'http://localhost:8000' // Local FastAPI URL for local testing
-    : 'https://code-consensus.netlify.app'; // Live Render URL for production
+    : 'https://code-consensus-app.onrender.com'; // Live Render URL for production
 
 const API_URL = `${BASE_URL}/api/hello`;
 
