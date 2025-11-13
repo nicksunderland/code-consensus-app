@@ -7,6 +7,7 @@ import MultiSelect from 'primevue/multiselect';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Tooltip from 'primevue/tooltip';
+import SplitButton from 'primevue/splitbutton';
 import Button from 'primevue/button';
 import Tree from 'primevue/tree';
 import DataTable from 'primevue/datatable';
@@ -24,6 +25,34 @@ const BASE_URL = import.meta.env.DEV
 const apiClient = axios.create({ baseURL: BASE_URL });
 
 
+//define save things
+const saveOptions = [
+  {
+    label: 'Save',
+    icon: 'pi pi-save',
+    command: () => save('save')
+  },
+  {
+    label: 'Update',
+    icon: 'pi pi-refresh',
+    command: () => save('update')
+  }
+];
+
+function mainSaveClick(event) {
+  // event is the PointerEvent, ignore it
+  save('save');
+}
+
+function save(action) {
+  console.log(`Action "${action}" is under development`);
+  toast.add({
+    severity: 'info',
+    summary: 'Not implemented',
+    detail: `"${action}" is under development`,
+    life: 3000
+  });
+}
 
 // Define the search things
 const searchInOptions = ref([
@@ -137,18 +166,49 @@ onMounted(async () => {
 const runSearch = async () => {
   // Build payload for the simplified backend
   const payload = {
-    terms: searchInputs.value.map(input => input.text).filter(Boolean), // only non-empty terms
-    system_ids: Array.from(new Set(searchInputs.value.flatMap(input => input.system_ids))),
-    use_regex: searchInputs.value.some(input => input.regex),
+    searches: searchInputs.value
+      .filter(input => input.text.trim()) // ignore completely empty inputs
+      .map(input => ({
+        text: input.text.trim(),
+        regex: input.regex,
+        columns: input.columns,        // e.g., ["code", "description"]
+        system_ids: input.system_ids   // e.g., [1, 2]
+      })),
     limit: 100
   };
 
   console.log('Payload:', payload);
 
+  if (payload.searches.length === 0) {
+    toast.add({
+      severity: 'warn',
+      summary: 'No Search Input',
+      detail: 'Please enter at least one search term.',
+      life: 4000
+    });
+    return;
+  }
+
+  // Format a user-friendly string for toast
+  const getSystemNames = (ids) =>
+    ids.map(id => searchSystemsOptions.value.find(s => s.id === id)?.name || id).join(', ');
+
+  const getColumnLabels = (values) =>
+    values.map(val => searchInOptions.value.find(c => c.value === val)?.label || val).join(', ');
+
+  const formattedTerms = payload.searches
+    .map((input, i) => {
+      const regex = input.regex ? ' [regex]' : '';
+      const systems = input.system_ids.length ? ` [systems: ${getSystemNames(input.system_ids)}]` : '';
+      const columns = input.columns.length ? ` [columns: ${getColumnLabels(input.columns)}]` : '';
+      return `${i + 1}: "${input.text}"${regex}${systems}${columns}`;
+    })
+    .join('\n');
+
   toast.add({
     severity: 'info',
-    summary: 'Search Executed',
-    detail: payload.terms.join(', '),
+    summary: 'Search in Progress',
+    detail: formattedTerms,
     life: 5000
   });
 
@@ -311,117 +371,92 @@ const selectedNodes = computed(() => {
 
     <!-- Configuration Card -->
     <section class="config-card card">
-      <div class="config-panels">
+      <!-- Search Panel Header -->
+      <div class="config-header">
+        <h2>Search</h2>
+        <span v-tooltip.top="{value: 'Add search term', showDelay: 300}">
+          <Button
+            icon="pi pi-plus"
+            severity="success"
+            rounded
+            variant="outlined"
+            size="small"
+            @click="addSearchTerm"
+            aria-label="Add search input"
+          />
+        </span>
+      </div>
 
-        <!-- Regex Panel -->
-        <div class="panel regex-panel">
-          <div class="regex-header">
-            <h2>Search</h2>
-            <span v-tooltip.top="'Add search term'">
+      <!-- Search Panel -->
+      <div class="panel regex-panel">
+        <div class="regex-list">
+          <div v-for="(input, index) in searchInputs" :key="index" class="regex-row">
+            <InputText
+              v-tooltip.top="{value: 'Enter search term or regular expression', showDelay: 300}"
+              type="text"
+              v-model="input.text"
+              placeholder="Enter search term"
+              class="search-line-input"
+            />
+            <span v-tooltip.top="{value: 'Regex search', showDelay: 300}">
+              <ToggleSwitch
+                  v-model="input.regex"
+                  class="search-use-regex"
+              />
+            </span>
+            <span v-tooltip.top="{value: 'Apply search to...', showDelay: 300}">
+              <MultiSelect
+                  v-model="input.columns"
+                  :options="searchInOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  class="search-column"
+              />
+            </span>
+            <span v-tooltip.top="{value: 'Coding systems', showDelay: 300}">
+              <MultiSelect
+                  v-model="input.system_ids"
+                  :options="searchSystemsOptions"
+                  optionLabel="name"
+                  optionValue="id"
+                  class="search-systems" />
+            </span>
+            <span v-tooltip.top="{value: 'Remove', showDelay: 300}">
               <Button
-                  icon="pi pi-plus"
-                  severity="success"
-                  rounded variant="outlined"
-                  size="small"
-                  @click="addSearchTerm"
-                  aria-label="Add search input"
-                />
+                icon="pi pi-times"
+                severity="danger"
+                rounded variant="outlined"
+                size="small"
+                :disabled="searchInputs.length === 1"
+                @click="removeSearchTerm(index)"
+                aria-label="Remove search input"
+              />
             </span>
           </div>
-          <div class="regex-list">
-            <div v-for="(input, index) in searchInputs" :key="index" class="regex-row">
-              <InputText
-                type="text"
-                v-model="input.text"
-                placeholder="Enter search term"
-                class="search-line-input"
-              />
-              <span v-tooltip.top="'Regex search'">
-                <ToggleSwitch
-                    v-tooltip.top="'Regex search'"
-                    v-model="input.regex"
-                    class="search-use-regex"
-                />
-              </span>
-              <span v-tooltip.top="'Apply search to...'">
-                <MultiSelect
-                    v-model="input.columns"
-                    :options="searchInOptions"
-                    optionLabel="label"
-                    optionValue="value"
-                    class="search-column"
-                />
-              </span>
-              <span v-tooltip.top="'Coding systems'">
-                <MultiSelect
-                    v-tooltip.top="'Coding systems'"
-                    v-model="input.system_ids"
-                    :options="searchSystemsOptions"
-                    optionLabel="name"
-                    optionValue="id"
-                    class="search-systems" />
-              </span>
-              <span v-tooltip.top="'Remove'">
-                <Button
-                  icon="pi pi-times"
-                  severity="danger"
-                  rounded variant="outlined"
-                  size="small"
-                  :disabled="searchInputs.length === 1"
-                  @click="removeSearchTerm(index)"
-                  aria-label="Remove search input"
-                />
-              </span>
-            </div>
-          </div>
         </div>
-
-        <!-- Description Panel -->
-<!--        <div class="panel desc-panel">-->
-<!--          <h2>Description</h2>-->
-<!--          <Textarea-->
-<!--            v-model="descriptionSearch"-->
-<!--            placeholder="Enter description..."-->
-<!--            rows="5"-->
-<!--            cols="30"-->
-<!--            class="desc-input"-->
-<!--          />-->
-<!--        </div>-->
-<!--        &lt;!&ndash; Other Panel &ndash;&gt;-->
-<!--        <div class="panel other-panel">-->
-<!--          <h2>Other</h2>-->
-<!--          <p>Placeholder for future controls (buttons, sliders, etc.)</p>-->
-<!--        </div>-->
-
       </div>
     </section>
 
     <!-- Run Search Card -->
     <section class="run-search-card card">
-      <Button
-        label="Run Search"
-        @click="runSearch"
-      />
-      <!-- Show text only after running search -->
-      <div class="run-search-output" v-if="searchExecuted">
-        <p>Last search:</p>
-        <p v-if="regexSearch">
-          Regex search: "{{ regexSearch }}"
-        </p>
-        <p v-if="descriptionSearch">
-          Description AI search: "{{ descriptionSearch }}"
-        </p>
+      <div class="search-button-container">
+        <Button
+          label="Run Search"
+          @click="runSearch"
+        />
+        <SplitButton
+          label="Save"
+          @click="mainSaveClick"
+          :model="saveOptions"
+        />
       </div>
+
     </section>
 
     <!-- Trees Section -->
-    <!--          :filter="true"-->
-    <!--          filterMode="lenient"-->
-<!--              @node-select="onNodeSelect"-->
-<!--          @node-unselect="onNodeUnselect"-->
     <section class="trees-section card">
+      <h2>Codes</h2>
       <div class="tree-wrapper">
-        <h2>Codes</h2>
         <Tree
           v-if="!loading && !errorMessage"
           :value="nodes"
@@ -441,6 +476,7 @@ const selectedNodes = computed(() => {
       </div>
     </section>
 
+    <!-- Selected Codes Section -->
     <section class="selected-panel card">
       <h2>Selected Codes</h2>
       <div class="table-wrapper" v-if="selectedNodes.length">
@@ -456,6 +492,8 @@ const selectedNodes = computed(() => {
         </DataTable>
       </div>
     </section>
+
+
   </div>
 </template>
 

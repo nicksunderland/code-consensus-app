@@ -117,46 +117,65 @@ async def get_tree_nodes(parent_id: str | None = None):
             raise HTTPException(status_code=500, detail="Database query failed")
 
 
+class SingleSearch(BaseModel):
+    text: str
+    regex: bool
+    columns: List[str]  # e.g., ["code", "description"]
+    system_ids: List[int]
+
+
 class SearchRequest(BaseModel):
-    """The complete search request body."""
-    terms: List[str] = Field(..., min_length=1)
-    system_ids: List[int] = Field(default_factory=list)
-    use_regex: bool = False
+    searches: List[SingleSearch]
     limit: int = 100
 
 
 @app.post("/api/search-nodes")
 async def search_nodes(request: SearchRequest):
     """
-    Performs an advanced search with multiple terms,
+    Performs an advanced search with multiple searches,
     combining them with 'AND'.
     """
-    if not request.terms:
+    if not request.searches:
         return {"results": [], "ancestor_map": {}}
 
     # --- Step 1: Dynamically build the search query ---
-    operator = "~*" if request.use_regex else "ILIKE"
     where_clauses = ["e.is_selectable = TRUE"]
     params = {"limit": request.limit}
 
-    if request.system_ids:
-        # If the list is NOT empty, add the filter
-        where_clauses.append("e.system_id = ANY(:system_ids)")
-        params["system_ids"] = request.system_ids
+    # --- Step 1a: Global system filter ---
+    all_system_ids = list({sid for s in request.searches for sid in s.system_ids})
+    if all_system_ids:
+        where_clauses.append("e.system_id = ANY(:all_system_ids)")
+        params["all_system_ids"] = all_system_ids
 
-    # Each term searches both code and description, combined with OR
-    for i, term in enumerate(request.terms):
-        if not term or not term.strip():
+    # --- Build OR conditions for each search ---
+    or_clauses = []
+
+    for i, s in enumerate(request.searches):
+        if not s.text.strip():
             continue
 
+        operator = "~*" if s.regex else "ILIKE"
         param_name = f"term_{i}"
-        if request.use_regex:
-            params[param_name] = term
-        else:
-            params[param_name] = f"%{term}%"
-        where_clauses.append(f"(e.code {operator} :{param_name} OR e.description {operator} :{param_name})")
-    # --- Step 1b: Assemble and execute the 'find' query ---
+        params[param_name] = s.text if s.regex else f"%{s.text}%"
 
+        # Columns per search
+        col_conditions = []
+        for col in s.columns:
+            col_conditions.append(f"e.{col} {operator} :{param_name}")
+
+        # System filter for this search
+        if s.system_ids:
+            system_param = f"system_ids_{i}"
+            params[system_param] = s.system_ids
+            col_conditions = [f"({c} AND e.system_id = ANY(:{system_param}))" for c in col_conditions]
+
+        or_clauses.append(f"({' OR '.join(col_conditions)})")
+
+    if or_clauses:
+        where_clauses.append(f"({' OR '.join(or_clauses)})")
+
+    # --- Step 1b: Assemble and execute the 'find' query ---
     full_where_clause = " AND ".join(where_clauses)
     query_find_nodes = text(f"""
         SELECT e.id, e.code, e.description, e.materialized_path, e.is_leaf, e.is_selectable, e.system_id, s.name AS system_name
@@ -166,7 +185,7 @@ async def search_nodes(request: SearchRequest):
         LIMIT :limit;
     """)
 
-    # This base query is useful for building the ancestor map
+    # This base query is for building the ancestor map
     ancestor_query_base = """
         SELECT e.id, e.code, e.description, e.materialized_path, e.is_leaf, e.is_selectable, e.system_id, s.name AS system_name
         FROM codes e
@@ -241,6 +260,7 @@ async def search_nodes(request: SearchRequest):
                 }
 
             # --- Step 4: Return payload ---
+            print(str(query_find_nodes))
             return {
                 "results": results_list,
                 "ancestor_map": ancestor_map,
