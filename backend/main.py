@@ -1,14 +1,11 @@
 import os
-import asyncio
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from sqlalchemy import text, bindparam, select, func, Column, Integer, String, Boolean, BigInteger, ForeignKey
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 from pydantic import BaseModel, Field
 from typing import List
-from enum import Enum
 from dotenv import load_dotenv
 
 load_dotenv()
