@@ -1,4 +1,32 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 
-createApp(App).mount('#app')
+// primevue
+import PrimeVue from 'primevue/config';
+import ToastService from 'primevue/toastservice';
+import Toast from 'primevue/toast';
+import Tooltip from 'primevue/tooltip';
+
+import Aura from '@primevue/themes/aura'
+import "./style.css"
+
+// create
+const app = createApp(App)
+
+// use the PrimeVue library
+app.use(PrimeVue, {
+    theme: {
+        preset: Aura,
+        options: {
+            prefix: 'p',
+            darkModeSelector: 'system',
+            cssLayer: false
+        }
+    }
+});
+
+// use toast for notifications
+app.use(ToastService);
+app.component('Toast', Toast);
+app.directive('tooltip', Tooltip);
+app.mount('#app')

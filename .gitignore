@@ -1,0 +1,8 @@
+# environment files
+.env
+
+# pycharm
+.idea
+
+# venv
+venv
