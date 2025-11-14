@@ -1,21 +1,7 @@
 import os
-from dotenv import load_dotenv
-from supabase import create_client, Client
+import csv
 from typing import List, Dict, Any, Optional
-import time
-
-# Supabase configuration
-load_dotenv()
-
-DATABASE_URL = os.environ.get("SUPABASE_URL")
-DATABASE_KEY = os.environ.get("SUPABASE_KEY")
-
-if not DATABASE_URL or not DATABASE_KEY:
-    raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set in .env file")
-
-
-# Initialize Supabase client
-supabase: Client = create_client(DATABASE_URL, DATABASE_KEY)
+import xml.etree.ElementTree as ET
 
 
 def create_icd10_table():
@@ -71,285 +57,310 @@ def create_icd10_table():
 
     CREATE INDEX IF NOT EXISTS idx_codes_trgm_code
     ON codes USING gin (code gin_trgm_ops);
+
+    -- 6. Co-occurence table
+    CREATE TABLE IF NOT EXISTS code_cooccurrence (
+    id BIGSERIAL PRIMARY KEY,
+    code_i BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+    code_j BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+    jaccard NUMERIC(5,3) DEFAULT 0,  -- e.g., 0.123
+    lift NUMERIC(5,3) DEFAULT 0,
+    CONSTRAINT code_pair_unique UNIQUE (code_i, code_j)
+);
     """
     print("Please create the table using the SQL in the function docstring")
 
+# ==========================================================
+# 1. PARSERS — You can add MANY of these
+#    Every parser MUST return: List[Dict] with:
+#      - code: str
+#      - description: str
+#      - parent_code: Optional[str]
+#      - is_leaf: bool
+#      - is_selectable: bool
+# ==========================================================
 
-def ensure_code_system(
-    supabase_client: Client,
-    system_details: Dict[str, Any]
-) -> int:
+
+def parse_icd10(file_path) -> List[Dict]:
+    """ Returns list of flat ICD-10 code dicts with correct hierarchy. """
+
+    import xml.etree.ElementTree as ET
+
+    tree = ET.parse(file_path)
+    root = tree.getroot()
+
+    codes = []
+    code_lookup = {}  # for parent lookup by code
+    current_chapter = None
+    block_stack = []  # track nested blocks/sub-blocks
+
+    def find_block_parent(code: str):
+        """Determine correct parent for a block, handling ranges like M05-M14."""
+        # If the block is a range (contains '-'), we may need to pop stack
+        while block_stack:
+            top = block_stack[-1]["code"]
+            # If current code range is outside top block, pop
+            if "-" in top and "-" in code:
+                top_start, top_end = top.split("-")
+                code_start, code_end = code.split("-")
+                # If current block starts after top block ends, it's sibling of top's parent
+                if code_start > top_end:
+                    block_stack.pop()
+                    continue
+            break
+        return block_stack[-1]["code"] if block_stack else current_chapter
+
+    for cls in root.findall(".//Class"):
+        code = cls.attrib.get("code")
+        kind = cls.attrib.get("kind")
+
+        rubric = cls.find(".//Rubric/Label")
+        description = rubric.text if rubric is not None else ""
+
+        parent = None
+        is_selectable = True
+
+        if kind == "chapter":
+            parent = "ROOT"
+            current_chapter = code
+            block_stack = []  # reset stack
+            is_selectable = False
+
+        elif kind == "block":
+            # Determine parent intelligently
+            parent = find_block_parent(code)
+            # Push this block onto the stack
+            block_stack.append({"code": code, "kind": "block"})
+            is_selectable = False
+
+        elif kind == "category":
+            # Determine parent: use code_lookup for dotted codes or top block
+            if "." in code:
+                prefix = code.split(".")[0]
+                parent = code_lookup.get(prefix, block_stack[-1]["code"] if block_stack else current_chapter)
+            else:
+                parent = block_stack[-1]["code"] if block_stack else current_chapter
+
+        # Update code_lookup only for non-dotted codes
+        if "." not in code:
+            code_lookup[code] = code
+
+        codes.append({
+            "code": code.replace(".", ""),  # remove dots for storage
+            "description": description,
+            "parent_code": parent,
+            "is_leaf": True,
+            "is_selectable": is_selectable
+        })
+
+    # Fix leaf flags: any code that is a parent is not a leaf
+    parent_codes = {c["parent_code"] for c in codes if c["parent_code"] not in (None, "ROOT")}
+    for c in codes:
+        if c["code"] in parent_codes:
+            c["is_leaf"] = False
+
+    return codes
+
+
+# ==========================================================
+# 2. HIERARCHY BUILDER (shared across all parsers)
+# ==========================================================
+def build_hierarchy_for_system(codes: List[Dict], system_id: int, system_row, next_global_id: int):
     """
-        Ensure a code system exists in the code_systems table by its name.
-        If it exists, return its ID. If not, create it and return the new ID.
-
-        :param supabase_client: An initialized Supabase client instance.
-        :param system_details: A dict containing 'name' and other fields
-                               (e.g., 'description', 'version', 'url').
-        :return: The integer ID of the existing or newly created code system.
-        """
-    # Get the unique name to check for existence
-    name = system_details.get("name")
-    if not name:
-        raise ValueError("system_details dictionary must contain a 'name' key.")
-
-    # 1. Check if the system exists
-    # We only select 'id' for efficiency, not '*'
-    result = supabase_client.table("code_systems").select("id").eq("name", name).execute()
-
-    if result.data:
-        system_id = result.data[0]['id']
-        print(f"Found code system '{name}': id={system_id}")
-        return system_id
-
-    # 2. If not, create it
-    print(f"Code system '{name}' not found. Creating...")
-    insert_result = supabase_client.table("code_systems").insert(system_details).execute()
-
-    new_system_id = insert_result.data[0]['id']
-    print(f"Created new code system '{name}': id={new_system_id}")
-    return new_system_id
-
-
-def parse_icd10_codes() -> List[Dict]:
-    """
-    Fetch ICD-10 codes from CMS (Centers for Medicare & Medicaid Services)
-    This uses a sample dataset. For complete codes, download from:
-    https://www.cms.gov/medicare/coding-billing/icd-10-codes
+    Produces normalized rows for one code system:
+      - Adds a synthetic root
+      - Assigns numeric IDs
+      - Computes parent_id
+      - Computes materialized_path
+    Returns:
+      (normalized_code_rows, next_available_global_id)
     """
 
-    # Sample ICD-10 codes (Common diagnoses)
-    sample_codes = [
-        # Circulatory system (I00-I99)
-        {"code": "I10",
-         "description": "Essential (primary) hypertension",
-         "is_selectable": True,
-         "is_leaf": True},
+    # ============================
+    # 1. Create synthetic root node
+    # ============================
+    root_internal_code = "__ROOT__"   # internal stable key, never shown externally
 
-        {"code": "I25",
-         "description": "Atherosclerotic heart disease",
-         "is_selectable": True,
-         "is_leaf": False},
+    root_node = {
+        "id": next_global_id,
+        "system_id": system_id,
+        "code": system_row["name"],              # display code (e.g. ICD-10)
+        "internal_code": root_internal_code,     # internal lookup key
+        "description": system_row["description"],
+        "parent_id": None,
+        "materialized_path": None,               # fill later
+        "is_leaf": False,
+        "is_selectable": False,
+    }
 
-        {"code": "I25.10",
-         "description": "Atherosclerotic heart disease of native coronary artery without angina pectoris",
-         "is_leaf": True,
-         "is_selectable": True,
-         "parent": "I25"},
+    lookup = {root_internal_code: root_node}
 
-        {"code": "I25.20",
-         "description": "Atherosclerotic something else",
-         "is_selectable": True,
-         "is_leaf": False,
-         "parent": "I25"},
+    next_global_id += 1
 
-        {"code": "I25.22",
-         "description": "Atherosclerotic something else foo-bar",
-         "is_selectable": True,
-         "is_leaf": True,
-         "parent": "I25.20"},
+    # ============================
+    # 2. Assign IDs to actual codes
+    # ============================
+    for c in codes:
+        c["id"] = next_global_id
+        c["system_id"] = system_id
+        next_global_id += 1
+        c["internal_code"] = c["code"]
+        lookup[c["internal_code"]] = c
 
-        {"code": "I50",
-         "description": "Heart failure",
-         "is_selectable": True,
-         "is_leaf": False},
+    # ============================
+    # 3. Compute materialized paths
+    # ============================
+    def compute_path(node_key):
+        node = lookup[node_key]
 
-        {"code": "I50.9",
-         "description": "Heart failure, unspecified",
-         "is_selectable": True,
-         "is_leaf": True,
-         "parent": "I50"},
+        if node.get("materialized_path"):
+            return node["materialized_path"]
 
-        {"code": "I50.8",
-         "description": "Heart failure, 1",
-         "is_selectable": True,
-         "is_leaf": False,
-         "parent": "I50"},
+        parent_code = node.get("parent_code")
 
-        {"code": "I50.85",
-         "description": "Heart failure, 1.5",
-         "is_selectable": True,
-         "is_leaf": True,
-         "parent": "I50.8"},
+        # FALLBACK: assign to root if parser left parent None or "ROOT"
+        if parent_code in (None, "ROOT", "__ROOT__", ""):
+            parent = root_node
+        else:
+            parent = lookup[parent_code]
+
+        node["parent_id"] = parent["id"]
+        parent_path = compute_path(parent["internal_code"])
+        node["materialized_path"] = f"{parent_path}{node['id']}/"
+        return node["materialized_path"]
+
+    # Compute root path first
+    root_node["materialized_path"] = f"/{root_node['id']}/"
+
+    # Now compute all others
+    for key in lookup:
+        compute_path(key)
+
+    # ============================
+    # 4. Return normalized rows
+    # ============================
+    final = []
+    for key, node in lookup.items():
+        final.append({
+            "id": node["id"],
+            "system_id": node["system_id"],
+            "code": node["code"],                       # human-friendly
+            "description": node["description"],
+            "parent_id": node["parent_id"],
+            "materialized_path": node["materialized_path"],
+            "is_leaf": node.get("is_leaf", False),
+            "is_selectable": node.get("is_selectable", False),
+        })
+
+    return final, next_global_id
+
+
+# ==========================================================
+# 3. CSV EXPORT HELPERS
+# ==========================================================
+
+def write_code_systems_csv(systems, path="code_systems.csv"):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=["id", "name", "description", "version", "url"])
+        w.writeheader()
+        for s in systems:
+            w.writerow(s)
+    print(f"✅ Wrote {path}")
+
+
+def write_codes_csv(code_rows, path="codes.csv"):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=[
+            "id", "system_id", "code", "description",
+            "parent_id", "materialized_path", "is_leaf", "is_selectable"
+        ])
+        w.writeheader()
+        for r in code_rows:
+            w.writerow(r)
+    print(f"✅ Wrote {path}")
+
+
+# ==========================================================
+# 4. MAIN — Supports Unlimited Systems
+# ==========================================================
+
+def run_export():
+    SYSTEMS = [
+        {
+            "name": "ICD-10",
+            "description": "ICD-10 2019 version (including COVID-19 updates)",
+            "version": "2019",
+            "url": "https://icdcdn.who.int/icd10/claml/icd102019en.xml.zip",
+            "parser": lambda: parse_icd10(os.path.expanduser("~/Downloads/icd102019en.xml"))
+        },
+
+        # Add more systems as needed:
+        # {
+        #     "name": "ICD-11",
+        #     "description": "foo",
+        #     "version": "2019",
+        #     "url": "https://icd.who.int/...",
+        #     "parser": lambda: parse_icd10(os.path.expanduser("~/Downloads/icd102019en.xml"))
+        # },
     ]
 
-    return sample_codes
+    system_rows = []
+    all_code_rows = []
+    next_system_id = 1
+    next_global_code_id = 1  # unique across *all* systems
 
+    for system in SYSTEMS:
+        print(f"\n📘 Parsing: {system['name']}")
 
-def seed_code_entities(
-        supabase: Client,
-        system_id: int,
-        system_details: Dict[str, Any],
-        codes: List[Dict[str, Any]]
-):
-    """
-    Inserts and correctly links hierarchical codes into the codes table,
-    first creating a single root node for the system itself.
-    This function *requires* the 'codes' list to be topologically sorted
-    (parents must appear in the list before their children).
-    """
-    print(f"🌱 Seeding {len(codes)} codes for system '{system_details['name']}'...")
+        parsed_codes = system["parser"]()
 
-    # This cache is the key. It maps a string CODE (e.g., "I25") to its
-    # database ID (e.g., 2) and full materialized_path (e.g., "/1/2/").
-    code_to_db_data: Dict[str, Dict[str, Any]] = {}
-
-    try:
-        # -----------------------------------------------------------------
-        # Step 1: Create the single root node for the system
-        # -----------------------------------------------------------------
-        print(f"   - Creating system root node: '{system_details['name']}'")
-
-        # Use the system's name as its "code"
-        root_code = system_details['name']
-
-        root_insert_data = {
-            "system_id": system_id,
-            "code": root_code,
-            "description": system_details['description'],
-            "parent_id": None,  # It is the root
-            "is_leaf": False,  # It will have chapters as children
-            "is_selectable": False  # The system itself is not selectable
+        system_row = {
+            "id": next_system_id,
+            "name": system["name"],
+            "description": system["description"],
+            "version": system["version"],
+            "url": system["url"]
         }
+        system_rows.append(system_row)
 
-        # Insert and get the new ID
-        root_result = supabase.table("codes").upsert(
-            root_insert_data,
-            on_conflict="system_id,code",
-            returning="representation"
-        ).execute()
+        print(f"🌳 Building hierarchy for {system['name']}…")
+        rows, next_global_code_id = build_hierarchy_for_system(
+            parsed_codes,
+            system_id=next_system_id,
+            system_row=system_row,
+            next_global_id=next_global_code_id
+        )
 
-        if not root_result.data:
-            raise Exception("Failed to create system root node.")
+        all_code_rows.extend(rows)
 
-        root_node = root_result.data[0]
-        root_node_id = root_node['id']
+        next_system_id += 1
 
-        # Update its path
-        root_materialized_path = f"/{root_node_id}/"
+    # ======================================================
+    # PRINT TOP 50 CODE ROWS FOR DEBUGGING
+    # ======================================================
+    print("\n🔎 Top 10 Codes:")
+    for row in all_code_rows[:10]:
+        desc = (row["description"][:50] + "…") if len(row["description"]) > 50 else row["description"]
+        print(
+            f"ID={row['id']} | system_id={row['system_id']} | code={row['code']} | "
+            f"parent_id={row['parent_id']} | leaf={row['is_leaf']} | "
+            f"path={row['materialized_path']} | desc=\"{desc}\""
+        )
 
-        supabase.table("codes").update(
-            {"materialized_path": root_materialized_path}
-        ).eq("id", root_node_id).execute()
+    print("\n🔎 Bottom 10 Codes:")
+    for row in all_code_rows[-10:]:
+        desc = (row["description"][:50] + "…") if len(row["description"]) > 50 else row["description"]
+        print(
+            f"ID={row['id']} | system_id={row['system_id']} | code={row['code']} | "
+            f"parent_id={row['parent_id']} | leaf={row['is_leaf']} | "
+            f"path={row['materialized_path']} | desc=\"{desc}\""
+        )
 
-        # Cache this root node. It will be the parent for all top-level codes.
-        # We cache it against its *code* (e.g., "ICD-10")
-        code_to_db_data[root_code] = {
-            "id": root_node_id,
-            "path": root_materialized_path
-        }
+    write_code_systems_csv(system_rows, path = os.path.expanduser("~/Downloads/systems.csv"))
+    write_codes_csv(all_code_rows, path = os.path.expanduser("~/Downloads/codes.csv"))
 
-        # Store the root data to be used as the default parent
-        default_parent_id = root_node_id
-        default_parent_path = root_materialized_path
-
-        print(f"   - System root node created with ID: {root_node_id}")
-
-        # -----------------------------------------------------------------
-        # Step 2: Loop and insert all child codes
-        # -----------------------------------------------------------------
-        total = len(codes)
-        for index, item in enumerate(codes):
-            code = item["code"]
-            parent_code = item.get("parent")  # e.g., "I25" or None
-
-            parent_id: Optional[int]
-            parent_path: str
-
-            if parent_code:
-                # This is a child of another code. Find its parent.
-                if parent_code not in code_to_db_data:
-                    print(f"  🔥 ERROR: Parent '{parent_code}' for child '{code}' not yet processed. Skipping.")
-                    continue
-
-                parent_data = code_to_db_data[parent_code]
-                parent_id = parent_data["id"]
-                parent_path = parent_data["path"]
-            else:
-                # This is a top-level chapter.
-                # Its parent is now the SYSTEM ROOT NODE.
-                parent_id = default_parent_id
-                parent_path = default_parent_path
-
-            # Use 'is_leaf' as the default for 'is_selectable'
-            is_leaf = item.get("is_leaf", True)
-            is_selectable = item.get("is_selectable", is_leaf)
-
-            # Insert/Update the node
-            insert_data = {
-                "system_id": system_id,
-                "code": code,
-                "description": item["description"],
-                "parent_id": parent_id,
-                "is_leaf": is_leaf,
-                "is_selectable": is_selectable
-            }
-
-            result = supabase.table("codes").upsert(
-                insert_data,
-                on_conflict="system_id,code",
-                returning="representation"
-            ).execute()
-
-            if not result.data:
-                raise Exception(f"Upsert failed for code '{code}'")
-
-            new_node = result.data[0]
-            new_id = new_node['id']
-
-            # Calculate path and UPDATE
-            materialized_path = f"{parent_path}{new_id}/"
-
-            if new_node.get('materialized_path') != materialized_path:
-                supabase.table("codes").update(
-                    {"materialized_path": materialized_path}
-                ).eq("id", new_id).execute()
-
-            # Cache this node's data for its children
-            code_to_db_data[code] = {
-                "id": new_id,
-                "path": materialized_path
-            }
-
-            if (index + 1) % 50 == 0 or (index + 1) == total:
-                print(f"   ...Processed {index + 1}/{total} codes (last: {code})")
-
-    except Exception as e:
-        print(f"  ❌ Failed to process code '{code}': {e}")
-        raise  # Re-raise the exception so the script stops
-
-    print(f"✅ Seeding complete for system '{system_details['name']}'.")
-
-
-def seed_database():
-    """Main function"""
-    print("=== Database Seeder ===")
-
-    # ICD-10
-    icd10_system_data = {
-        "name": "ICD-10",
-        "description": "International Classification of Diseases, 10th Revision",
-        "version": "2025",
-        "url": "https://www.cms.gov/medicare/coding-billing/icd-10-codes"
-    }
-    icd10_codes = parse_icd10_codes()
-    icd_10_system_id = ensure_code_system(supabase, icd10_system_data)
-    seed_code_entities(supabase, icd_10_system_id, icd10_system_data, icd10_codes)
-
-    print("✅ Seeding completed!")
+    print("\n🎉 EXPORT COMPLETE — ALL SYSTEMS PROCESSED!")
 
 
 if __name__ == "__main__":
-    print("=" * 60)
-    print("CODE SYSTEM SEEDER")
-    print("=" * 60)
-    print("\nEnsure the following before running:")
-    print("1. Database tables created using create_code_tables_sql()")
-    print("2. SUPABASE_URL and SUPABASE_KEY environment variables set")
-    print("3. Run: pip install supabase\n")
-    print("=" * 60 + "\n")
-
-    # Uncomment to print SQL for creating the tables
-    # print(create_code_tables_sql())
-
-    seed_database()
+    run_export()

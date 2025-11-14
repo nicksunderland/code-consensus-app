@@ -21,21 +21,24 @@ body {
 }
 
 /* --- Top Bar --- */
-.top-bar {
+.menubar-title {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 1rem;
 }
 
-.top-bar h1 {
-  font-size: 2rem;
-  font-weight: 600;
-  margin: 0;
+/* Make the PrimeIcon larger reliably */
+.title-icon {
+  font-size: 2rem !important; /* use !important to override Menubar styles */
+  line-height: 1;
+  margin-right: 0.75rem;
+}
+
+.title-text {
+  font-size: 1.75rem;
 }
 
 /* --- Cards --- */
-.card, .selected-panel {
+.card, .selected-panel, .diagnostics-panel {
   background: var(--p-surface-card, #ffffff);
   border-radius: 1rem;
   box-shadow: 0 4px 18px rgba(0,0,0,0.06);
@@ -105,9 +108,11 @@ body {
 
 /* --- Search/save Section --- */
 .search-button-container {
-  display: inline-flex;        /* inline with surrounding content if needed */
-  align-items: center;         /* vertically align button with title */
-  gap: 0.5rem;                 /* small space between title and button */
+  display: flex;           /* enables flex layout */
+  justify-content: center; /* horizontal centering */
+  align-items: center;     /* vertical alignment if needed */
+  gap: 1rem;               /* space between buttons */
+  flex-wrap: wrap;         /* wrap if viewport is small */
 }
 
 /* --- Trees Section --- */
@@ -181,10 +186,49 @@ body {
   background-color: #fafafa;
 }
 
-/* --- Run Search Card --- */
-.run-search-card {
+
+/* --- Diagnostics Section --- */
+.diagnostic-card-wrapper {
+  width: 100%;
+}
+
+/* Flex container */
+.diagnostic-card-panel {
+  display: flex;
+  flex-wrap: wrap; /* Allows items to wrap on small screens if needed */
+  gap: 1rem;
+}
+
+/* Left panel: chart (80%) */
+.diagnostic-card-panel-left {
+  flex: 4;          /* 4 parts of the total (4 + 1 = 5) */
+  min-width: 0;       /* VITAL: Allows the flex item to shrink below its content's default size */
+}
+.diagnostic-card-panel-right {
+  flex: 1;
+  min-width: 200px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+  gap: 1rem;
+  padding: 0.5rem;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column; /* stack label and slider */
+  gap: 0.8rem;
+}
+
+.control-label {
+  /*font-weight: 600;*/
+}
+
+.slider-wrapper {
+  display: flex;
+  flex-direction: column; /* ensures slider stretches below label */
+}
+
+.control-value {
+  font-size: 0.875rem;
+  color: #555;
 }

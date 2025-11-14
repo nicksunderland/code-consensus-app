@@ -270,3 +270,88 @@ async def search_nodes(request: SearchRequest):
         except Exception as e:
             print(f"Error in /api/search/nodes: {e}")
             raise HTTPException(status_code=500, detail="Search query failed. Check query syntax.")
+
+
+class CooccurrenceRequest(BaseModel):
+    code_ids: List[int]
+    min_threshold: float = 0.0
+    max_threshold: float = 0.0
+    metric: str = "jaccard"
+
+
+@app.post("/api/get-cooccurrence")
+async def get_cooccurrence(request: CooccurrenceRequest):
+    """
+    Returns codes that co-occur with the given code_ids
+    above the specified threshold for the selected metric.
+    """
+    if not request.code_ids:
+        return {"results": []}
+
+    if request.metric not in ("jaccard", "lift"):
+        raise HTTPException(status_code=400, detail="Invalid metric. Must be 'jaccard' or 'lift'.")
+
+    # SQL query to get co-occurring codes
+    sql = text(f"""
+        SELECT
+            CASE 
+                WHEN cc.code_i = ANY(:code_ids) THEN cc.code_i
+                ELSE cc.code_j
+            END AS code_i,
+            c_i.code AS code_i_str,
+            c_i.description AS code_i_description,
+            CASE 
+                WHEN cc.code_i = ANY(:code_ids) THEN cc.code_j
+                ELSE cc.code_i
+            END AS code_j,
+            c_j.code AS code_j_str,
+            c_j.description AS code_j_description,
+            cc.{request.metric} AS metric_value
+        FROM code_cooccurrence cc
+        JOIN codes c_i ON c_i.id = CASE 
+                                       WHEN cc.code_i = ANY(:code_ids) THEN cc.code_i
+                                       ELSE cc.code_j
+                                   END
+        JOIN codes c_j ON c_j.id = CASE 
+                                       WHEN cc.code_i = ANY(:code_ids) THEN cc.code_j
+                                       ELSE cc.code_i
+                                   END
+        WHERE cc.code_i = ANY(:code_ids) OR cc.code_j = ANY(:code_ids)
+          AND cc.{request.metric} >= :min_threshold
+          AND cc.{request.metric} <= :max_threshold
+        ORDER BY code_i, metric_value DESC
+    """)
+
+    params = {
+        "code_ids": request.code_ids,
+        "min_threshold": request.min_threshold,
+        "max_threshold": request.max_threshold
+    }
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(sql, params)
+            search_results = result.fetchall()
+
+            if not search_results:
+                return {"results": []}
+
+            # Build a list of fully labeled pairs
+            results = [
+                {
+                    "code_i": row.code_i,
+                    "code_i_str": row.code_i_str,
+                    "code_i_description": row.code_i_description,
+                    "code_j": row.code_j,
+                    "code_j_str": row.code_j_str,
+                    "code_j_description": row.code_j_description,
+                    request.metric: row.metric_value
+                }
+                for row in search_results
+            ]
+
+            return {"results": results}
+
+        except Exception as e:
+            print(f"Error in /api/get-cooccurrence: {e}")
+            raise HTTPException(status_code=500, detail="Failed to fetch co-occurring codes.")

@@ -6,8 +6,12 @@ import PrimeVue from 'primevue/config';
 import ToastService from 'primevue/toastservice';
 import Toast from 'primevue/toast';
 import Tooltip from 'primevue/tooltip';
-
 import Aura from '@primevue/themes/aura'
+
+// apexcharts
+import VueApexCharts from "vue3-apexcharts";
+
+// styles
 import "./style.css"
 
 // create
@@ -28,5 +32,6 @@ app.use(PrimeVue, {
 // use toast for notifications
 app.use(ToastService);
 app.component('Toast', Toast);
+app.component('apexchart', VueApexCharts)
 app.directive('tooltip', Tooltip);
 app.mount('#app')

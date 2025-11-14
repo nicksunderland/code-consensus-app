@@ -7,8 +7,14 @@ import MultiSelect from 'primevue/multiselect';
 import InputText from 'primevue/inputtext';
 import Textarea from 'primevue/textarea';
 import Tooltip from 'primevue/tooltip';
+import Card from 'primevue/card';
+import Panel from 'primevue/panel';
+import Chart from 'primevue/chart';
+import Divider from 'primevue/divider';
 import SplitButton from 'primevue/splitbutton';
+import Slider from 'primevue/slider';
 import Button from 'primevue/button';
+import Select from 'primevue/select';
 import Tree from 'primevue/tree';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
@@ -17,6 +23,7 @@ import { useToast } from 'primevue/usetoast';
 import 'primeicons/primeicons.css';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
+import VueApexCharts from "vue3-apexcharts"
 
 const BASE_URL = import.meta.env.DEV
     ? 'http://localhost:8000'
@@ -55,6 +62,7 @@ function save(action) {
 }
 
 // Define the search things
+const autoSelect = ref(false);
 const searchInOptions = ref([
   { label: 'Codes', value: 'code' },
   { label: 'Description', value: 'description' }
@@ -93,26 +101,17 @@ const toast = useToast();
 // menu
 const menuItems = ref([
   {
-    label: 'File',
+    label: 'Examples',
     items: [
-      { label: 'New', icon: 'pi pi-fw pi-plus' },
-      { label: 'Open', icon: 'pi pi-fw pi-folder' },
-      { separator: true },
-      { label: 'Exit', icon: 'pi pi-fw pi-times' }
-    ]
-  },
-  {
-    label: 'Edit',
-    items: [
-      { label: 'Undo', icon: 'pi pi-fw pi-refresh' },
-      { label: 'Redo', icon: 'pi pi-fw pi-repeat' }
+      { label: 'Heart failure', icon: 'pi pi-fw pi-heart' },
+      { label: 'Coronary artery disease', icon: 'pi pi-heart-fill' }
     ]
   },
   {
     label: 'Help',
     items: [
-      { label: 'Documentation', icon: 'pi pi-fw pi-info-circle' },
-      { label: 'About', icon: 'pi pi-fw pi-question' }
+      { label: 'Documentation', icon: 'pi pi-fw pi-book' },
+      { label: 'About', icon: 'pi pi-fw pi-info-circle' }
     ]
   }
 ]);
@@ -158,10 +157,6 @@ onMounted(async () => {
 
   console.log('Systems for MultiSelect:', searchSystemsOptions.value);
 });
-
-
-
-
 
 const runSearch = async () => {
   // Build payload for the simplified backend
@@ -253,6 +248,8 @@ function clearSearchFlags(nodes) {
     }
   });
 }
+
+
 
 function mergeSearchNodesIntoTree({ results, ancestor_map }) {
   console.log("=== mergeSearchNodesIntoTree ===");
@@ -353,6 +350,99 @@ const selectedNodes = computed(() => {
 });
 
 
+const sliderRange = ref([-1,1])
+watch(sliderRange, (val, oldVal) => {
+  if (val[0] > val[1]) {
+    // Always keep left <= right
+    sliderRange.value = [Math.min(...val), Math.max(...val)]
+  }
+}, { deep: true })
+const selectedMetric = ref('jaccard')  // default metric
+const metricOptions = [
+  { label: 'Jaccard', value: 'jaccard' },
+  { label: 'Lift', value: 'lift' }
+]
+
+
+
+// Heatmap chart options
+const chartOptions = ref({
+  chart: { height: 350, type: "heatmap" },
+  dataLabels: { enabled: false },
+  colors: ["#008FFB"],
+  xaxis: { categories: [] },
+  tooltip: {
+    enabled: true,
+    shared: false,
+    custom: function({ series, seriesIndex, dataPointIndex, w }) {
+      // get your actual data point from the series object
+      const dataPoint = w.config.series[seriesIndex].data[dataPointIndex]
+      if (dataPoint && dataPoint.meta) {
+        const { code_i_str, code_i_description, code_j_str, code_j_description, metric_name, y } = dataPoint.meta
+        return `
+          <div style="padding:5px; font-size:13px;">
+            <strong>${code_i_str}</strong> (${code_i_description})<br>
+            <strong>${code_j_str}</strong> (${code_j_description})<br>
+            ${metric_name}: ${y.toFixed(2)}
+          </div>
+        `
+      }
+      return null
+    }
+  }
+})
+const analysisResults = ref([])
+const series = ref([])
+function buildHeatmapSeries(results, metric) {
+  const grouped = {}
+  results.forEach(r => {
+    if (!grouped[r.code_i_str]) grouped[r.code_i_str] = []
+    grouped[r.code_i_str].push({
+      x: r.code_j_str,
+      y: r[metric],
+      meta: {
+        code_i_str: r.code_i_str,
+        code_i_description: r.code_i_description,
+        code_j_str: r.code_j_str,
+        code_j_description: r.code_j_description,
+        metric_name: metric,
+        y: r[metric] // include the metric for convenience
+      }
+    })
+  })
+
+  return Object.entries(grouped).map(([name, data]) => ({ name, data }))
+}
+async function runAnalysis() {
+  const selectedCodeIds = selectedNodes.value.map(n => n.id)
+
+  if (!selectedCodeIds.length) {
+    alert("Select at least one code to analyze")
+    return
+  }
+
+  try {
+    const response = await apiClient.post("/api/get-cooccurrence", {
+      code_ids: selectedCodeIds,
+      min_threshold: sliderRange.value[0],
+      max_threshold: sliderRange.value[1],
+      metric: selectedMetric.value
+    })
+
+    analysisResults.value = response.data.results
+
+    // Rebuild heatmap series
+    series.value = buildHeatmapSeries(analysisResults.value, selectedMetric.value)
+
+    const allX = [...new Set(analysisResults.value.map(r => r.code_j_str))]
+    chartOptions.value = { ...chartOptions.value, xaxis: { categories: allX } }
+
+    console.log("Analysis results:", analysisResults.value)
+  } catch (err) {
+    console.error("Error running analysis:", err)
+    alert("Failed to fetch co-occurrence data.")
+  }
+}
 
 
 </script>
@@ -364,99 +454,119 @@ const selectedNodes = computed(() => {
 
   <div class="app-container">
     <!-- Top bar with title and menu -->
-    <header class="top-bar">
-      <h1>EHR Code Dictionary</h1>
-      <Menubar :model="menuItems" />
-    </header>
+    <Menubar>
+      <!-- Title on the left -->
+      <template #start>
+        <div class="menubar-title flex align-items-center">
+          <i class="pi pi-users title-icon"></i>
+          <span class="title-text">Code Consensus</span>
+        </div>
+      </template>
+
+      <!-- Menu items on the right -->
+      <template #end>
+        <Menubar :model="menuItems" />
+      </template>
+    </Menubar>
+
 
     <!-- Configuration Card -->
-    <section class="config-card card">
-      <!-- Search Panel Header -->
-      <div class="config-header">
-        <h2>Search</h2>
-        <span v-tooltip.top="{value: 'Add search term', showDelay: 300}">
-          <Button
-            icon="pi pi-plus"
-            severity="success"
-            rounded
-            variant="outlined"
-            size="small"
-            @click="addSearchTerm"
-            aria-label="Add search input"
-          />
-        </span>
-      </div>
-
-      <!-- Search Panel -->
-      <div class="panel regex-panel">
-        <div class="regex-list">
-          <div v-for="(input, index) in searchInputs" :key="index" class="regex-row">
-            <InputText
-              v-tooltip.top="{value: 'Enter search term or regular expression', showDelay: 300}"
-              type="text"
-              v-model="input.text"
-              placeholder="Enter search term"
-              class="search-line-input"
+    <Card>
+      <template #title>
+        <div class="regex-header">
+          <span>Search</span>
+          <span v-tooltip.top="{ value: 'Add search term', showDelay: 300 }">
+            <Button
+              icon="pi pi-plus"
+              severity="success"
+              rounded
+              variant="outlined"
+              size="small"
+              @click="addSearchTerm"
+              aria-label="Add search input"
             />
-            <span v-tooltip.top="{value: 'Regex search', showDelay: 300}">
-              <ToggleSwitch
-                  v-model="input.regex"
-                  class="search-use-regex"
+          </span>
+        </div>
+      </template>
+      <template #content>
+        <!-- Search Panel -->
+        <div class="panel regex-panel">
+          <div class="regex-list">
+            <div v-for="(input, index) in searchInputs" :key="index" class="regex-row">
+              <InputText
+                v-tooltip.top="{value: 'Enter search term or regular expression', showDelay: 300}"
+                type="text"
+                v-model="input.text"
+                placeholder="Enter search term"
+                class="search-line-input"
               />
-            </span>
-            <span v-tooltip.top="{value: 'Apply search to...', showDelay: 300}">
-              <MultiSelect
-                  v-model="input.columns"
-                  :options="searchInOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  class="search-column"
-              />
-            </span>
-            <span v-tooltip.top="{value: 'Coding systems', showDelay: 300}">
-              <MultiSelect
-                  v-model="input.system_ids"
-                  :options="searchSystemsOptions"
-                  optionLabel="name"
-                  optionValue="id"
-                  class="search-systems" />
-            </span>
-            <span v-tooltip.top="{value: 'Remove', showDelay: 300}">
-              <Button
-                icon="pi pi-times"
-                severity="danger"
-                rounded variant="outlined"
-                size="small"
-                :disabled="searchInputs.length === 1"
-                @click="removeSearchTerm(index)"
-                aria-label="Remove search input"
-              />
-            </span>
+              <span v-tooltip.top="{value: 'Regex search', showDelay: 300}">
+                <ToggleSwitch
+                    v-model="input.regex"
+                    class="search-use-regex"
+                />
+              </span>
+              <span v-tooltip.top="{value: 'Apply search to...', showDelay: 300}">
+                <MultiSelect
+                    v-model="input.columns"
+                    :options="searchInOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    class="search-column"
+                />
+              </span>
+              <span v-tooltip.top="{value: 'Coding systems', showDelay: 300}">
+                <MultiSelect
+                    v-model="input.system_ids"
+                    :options="searchSystemsOptions"
+                    optionLabel="name"
+                    optionValue="id"
+                    class="search-systems" />
+              </span>
+              <span v-tooltip.top="{value: 'Remove', showDelay: 300}">
+                <Button
+                  icon="pi pi-times"
+                  severity="danger"
+                  rounded variant="outlined"
+                  size="small"
+                  :disabled="searchInputs.length === 1"
+                  @click="removeSearchTerm(index)"
+                  aria-label="Remove search input"
+                />
+              </span>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </template>
+    </Card>
 
     <!-- Run Search Card -->
-    <section class="run-search-card card">
-      <div class="search-button-container">
-        <Button
-          label="Run Search"
-          @click="runSearch"
-        />
-        <SplitButton
-          label="Save"
-          @click="mainSaveClick"
-          :model="saveOptions"
-        />
-      </div>
-
-    </section>
+    <Card>
+      <template #content>
+        <div class="search-button-container">
+          <Button
+            label="Run Search"
+            @click="runSearch"
+          />
+          <span v-tooltip.top="{value: 'Auto-select search results', showDelay: 300}">
+            <ToggleSwitch
+                v-model="autoSelect"
+                class="auto-select-search"
+            />
+          </span>
+          <SplitButton
+            label="Save"
+            @click="mainSaveClick"
+            :model="saveOptions"
+          />
+        </div>
+      </template>
+    </Card>
 
     <!-- Trees Section -->
-    <section class="trees-section card">
-      <h2>Codes</h2>
-      <div class="tree-wrapper">
+    <Card>
+      <template #title>Codes</template>
+      <template #content>
         <Tree
           v-if="!loading && !errorMessage"
           :value="nodes"
@@ -473,26 +583,86 @@ const selectedNodes = computed(() => {
             </span>
           </template>
         </Tree>
-      </div>
-    </section>
+      </template>
+    </Card>
 
     <!-- Selected Codes Section -->
-    <section class="selected-panel card">
-      <h2>Selected Codes</h2>
-      <div class="table-wrapper" v-if="selectedNodes.length">
+    <Card>
+      <template #title>Selected Codes</template>
+      <template #content>
         <DataTable
           :value="selectedNodes"
           :emptyMessage="'No nodes selected.'"
           responsiveLayout="scroll"
+          scrollable
+          scrollHeight="600px"
         >
+          <template #header>
+            <div class="text-end pb-4">
+              <Button
+                  icon="pi pi-trash"
+                  label="Clear"
+                  @click="selectedNodeKeys = {}"
+              />
+            </div>
+          </template>
           <Column field="code" header="Code" />
           <Column field="description" header="Description" />
           <Column field="system" header="System" />
           <Column field="found_in_search" header="Found in Search"/>
         </DataTable>
-      </div>
-    </section>
+      </template>
+    </Card>
 
+    <!-- Diagnostics Section -->
+    <Card class="diagnostic-card-wrapper">
+      <template #title>Diagnostics</template>
+      <template #content>
+        <div class="diagnostic-card-panel">
+
+          <div class="diagnostic-card-panel-left">
+            <apexchart
+              type="heatmap"
+              height="350"
+              :options="chartOptions"
+              :series="series"
+              width="100%" />
+          </div>
+
+          <Panel header="Controls" class="diagnostic-card-panel-right">
+            <div class="control-group">
+              <label for="metric">Metric</label>
+              <Select
+                  v-model="selectedMetric"
+                  :options="metricOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Select metric"
+              />
+              <label for="threshold" class="control-label">Threshold</label>
+              <div class="slider-wrapper">
+                <Slider
+                  v-model="sliderRange"
+                  range
+                  :min="-2"
+                  :max="2"
+                  :step="0.1"
+                  id="threshold"
+                />
+              </div>
+              <div class="control-value">Selected: {{ sliderRange[0] }} to {{ sliderRange[1] }}</div>
+              <Divider />
+              <Button
+                  icon="pi pi-play"
+                  label="Run analysis"
+                  @click="runAnalysis"
+              />
+            </div>
+          </Panel>
+
+        </div>
+      </template>
+    </Card>
 
   </div>
 </template>
