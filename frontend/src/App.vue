@@ -350,7 +350,10 @@ const selectedNodes = computed(() => {
 });
 
 
-const sliderRange = ref([-1,1])
+const sliderMin = computed(() => selectedMetric.value === 'jaccard' ? 0 : 0)
+const sliderMax = computed(() => selectedMetric.value === 'jaccard' ? 1 : 1000)
+const sliderStep = computed(() => selectedMetric.value === 'jaccard' ? 0.01 : 0.1)
+const sliderRange = ref([0.05,1])
 watch(sliderRange, (val, oldVal) => {
   if (val[0] > val[1]) {
     // Always keep left <= right
@@ -362,8 +365,23 @@ const metricOptions = [
   { label: 'Jaccard', value: 'jaccard' },
   { label: 'Lift', value: 'lift' }
 ]
-
-
+watch(selectedMetric, (newMetric) => {
+  if (newMetric === 'jaccard') {
+    sliderRange.value = [0.05, 1]
+  } else if (newMetric === 'lift') {
+    sliderRange.value = [5, 1000]
+  }
+})
+function metricTooltip(metric) {
+  switch (metric) {
+    case "jaccard":
+      return "Jaccard index: measures the proportion of shared individuals between two codes. Range: 0 (no overlap) to 1 (all individuals shared)."
+    case "lift":
+      return "Lift: measures how much more often two codes occur together than expected by chance. Values >1 indicate positive association."
+    default:
+      return "Select a metric to see explanation."
+  }
+}
 
 // Heatmap chart options
 const chartOptions = ref({
@@ -375,49 +393,104 @@ const chartOptions = ref({
     enabled: true,
     shared: false,
     custom: function({ series, seriesIndex, dataPointIndex, w }) {
-      // get your actual data point from the series object
       const dataPoint = w.config.series[seriesIndex].data[dataPointIndex]
-      if (dataPoint && dataPoint.meta) {
-        const { code_i_str, code_i_description, code_j_str, code_j_description, metric_name, y } = dataPoint.meta
+      const meta = dataPoint.meta
+
+      if (meta?.message) {
         return `
           <div style="padding:5px; font-size:13px;">
-            <strong>${code_i_str}</strong> (${code_i_description})<br>
-            <strong>${code_j_str}</strong> (${code_j_description})<br>
-            ${metric_name}: ${y.toFixed(2)}
+            <strong>${meta.code_i_str}</strong> (${meta.code_i_description})<br>
+            <strong>${meta.code_j_str}</strong> (${meta.code_j_description})<br>
+            ${meta.message}
           </div>
         `
       }
-      return null
+
+      return `
+        <div style="padding:5px; font-size:13px;">
+          <strong>${meta.code_i_str}</strong> (${meta.code_i_description})<br>
+          <strong>${meta.code_j_str}</strong> (${meta.code_j_description})<br>
+          ${meta.metric_name}: ${meta.y.toFixed(3)}
+        </div>
+      `
     }
   }
 })
 const analysisResults = ref([])
 const series = ref([])
 function buildHeatmapSeries(results, metric) {
-  const grouped = {}
+  if (!results.length) return { series: [], xCategories: [] }
+
+  // 1. Extract unique X and Y
+  const allY = [...new Set(results.map(r => r.code_i_str).filter(Boolean))]
+  const allX = [...new Set(results.map(r => r.code_j_str).filter(Boolean))]
+
+  console.log("Y:", allY)
+  console.log("X:", allX)
+
+  // 2. Build lookup table
+  const lookup = {}
+  const descriptions = {}
   results.forEach(r => {
-    if (!grouped[r.code_i_str]) grouped[r.code_i_str] = []
-    grouped[r.code_i_str].push({
-      x: r.code_j_str,
-      y: r[metric],
-      meta: {
-        code_i_str: r.code_i_str,
-        code_i_description: r.code_i_description,
-        code_j_str: r.code_j_str,
-        code_j_description: r.code_j_description,
-        metric_name: metric,
-        y: r[metric] // include the metric for convenience
-      }
-    })
+    const key = `${r.code_i_str}||${r.code_j_str}`
+    lookup[key] = r
+    if (r.code_i_str) descriptions[r.code_i_str] = r.code_i_description
+    if (r.code_j_str) descriptions[r.code_j_str] = r.code_j_description
   })
 
-  return Object.entries(grouped).map(([name, data]) => ({ name, data }))
+  // 3. Build complete heatmap series
+  const series = allY.map(yLabel => {
+    const row = allX.map(xLabel => {
+      const key = `${yLabel}||${xLabel}`
+      const r = lookup[key]
+
+      if (r) {
+        return {
+          x: xLabel,
+          y: r[metric],
+          meta: {
+            code_i_str: r.code_i_str,
+            code_i_description: r.code_i_description,
+            code_j_str: r.code_j_str,
+            code_j_description: r.code_j_description,
+            metric_name: metric,
+            y: r[metric]
+          }
+        }
+      }
+
+      // Missing cell → fill with placeholder, but include descriptions if available
+      return {
+        x: xLabel,
+        y: 0,
+        meta: {
+          code_i_str: yLabel,
+          code_i_description: descriptions[yLabel] ?? "",
+          code_j_str: xLabel,
+          code_j_description: descriptions[xLabel] ?? "",
+          metric_name: metric,
+          y: 0,
+          message: "No co-occurrence for this pair - likely low number suppression"
+        }
+      }
+    })
+
+    return { name: yLabel, data: row }
+  })
+
+  console.log(series)
+  return { series, xCategories: allX }
 }
 async function runAnalysis() {
   const selectedCodeIds = selectedNodes.value.map(n => n.id)
 
   if (!selectedCodeIds.length) {
-    alert("Select at least one code to analyze")
+    toast.add({
+      severity: 'warn',
+      summary: 'No codes selected',
+      detail: "Select at least one code to analyze",
+      life: 3000
+    });
     return
   }
 
@@ -432,10 +505,15 @@ async function runAnalysis() {
     analysisResults.value = response.data.results
 
     // Rebuild heatmap series
-    series.value = buildHeatmapSeries(analysisResults.value, selectedMetric.value)
+    const { series: builtSeries, xCategories } =
+      buildHeatmapSeries(analysisResults.value, selectedMetric.value)
 
-    const allX = [...new Set(analysisResults.value.map(r => r.code_j_str))]
-    chartOptions.value = { ...chartOptions.value, xaxis: { categories: allX } }
+    series.value = builtSeries
+
+    chartOptions.value = {
+      ...chartOptions.value,
+      xaxis: { categories: xCategories }
+    }
 
     console.log("Analysis results:", analysisResults.value)
   } catch (err) {
@@ -633,6 +711,7 @@ async function runAnalysis() {
             <div class="control-group">
               <label for="metric">Metric</label>
               <Select
+                  v-tooltip.top="metricTooltip(selectedMetric)"
                   v-model="selectedMetric"
                   :options="metricOptions"
                   optionLabel="label"
@@ -644,9 +723,9 @@ async function runAnalysis() {
                 <Slider
                   v-model="sliderRange"
                   range
-                  :min="-2"
-                  :max="2"
-                  :step="0.1"
+                  :min="sliderMin"
+                  :max="sliderMax"
+                  :step="sliderStep"
                   id="threshold"
                 />
               </div>

@@ -293,33 +293,33 @@ async def get_cooccurrence(request: CooccurrenceRequest):
 
     # SQL query to get co-occurring codes
     sql = text(f"""
+        WITH input_codes AS (
+            SELECT unnest(CAST(:code_ids AS bigint[])) AS code_id
+        )
         SELECT
-            CASE 
-                WHEN cc.code_i = ANY(:code_ids) THEN cc.code_i
-                ELSE cc.code_j
-            END AS code_i,
+            ic.code_id AS code_i,
             c_i.code AS code_i_str,
             c_i.description AS code_i_description,
-            CASE 
-                WHEN cc.code_i = ANY(:code_ids) THEN cc.code_j
-                ELSE cc.code_i
-            END AS code_j,
+
+            cc.other_code AS code_j,
             c_j.code AS code_j_str,
             c_j.description AS code_j_description,
-            cc.{request.metric} AS metric_value
-        FROM code_cooccurrence cc
-        JOIN codes c_i ON c_i.id = CASE 
-                                       WHEN cc.code_i = ANY(:code_ids) THEN cc.code_i
-                                       ELSE cc.code_j
-                                   END
-        JOIN codes c_j ON c_j.id = CASE 
-                                       WHEN cc.code_i = ANY(:code_ids) THEN cc.code_j
-                                       ELSE cc.code_i
-                                   END
-        WHERE cc.code_i = ANY(:code_ids) OR cc.code_j = ANY(:code_ids)
-          AND cc.{request.metric} >= :min_threshold
-          AND cc.{request.metric} <= :max_threshold
-        ORDER BY code_i, metric_value DESC
+
+            cc.metric_value
+        FROM input_codes ic
+        LEFT JOIN LATERAL (
+            SELECT
+                CASE WHEN cc.code_i = ic.code_id THEN cc.code_j ELSE cc.code_i END AS other_code,
+                cc.{request.metric} AS metric_value
+            FROM code_cooccurrence cc
+            WHERE (cc.code_i = ic.code_id OR cc.code_j = ic.code_id)
+              AND cc.{request.metric} >= :min_threshold
+              AND cc.{request.metric} <= :max_threshold
+            ORDER BY cc.{request.metric} DESC
+        ) cc ON TRUE
+        LEFT JOIN codes c_i ON c_i.id = ic.code_id
+        LEFT JOIN codes c_j ON c_j.id = cc.other_code
+        ORDER BY ic.code_id, cc.metric_value DESC NULLS LAST;
     """)
 
     params = {
@@ -330,6 +330,8 @@ async def get_cooccurrence(request: CooccurrenceRequest):
 
     async with AsyncSessionLocal() as session:
         try:
+            print("SQL Query:", str(sql))
+            print("Parameters:", params)
             result = await session.execute(sql, params)
             search_results = result.fetchall()
 
@@ -349,7 +351,6 @@ async def get_cooccurrence(request: CooccurrenceRequest):
                 }
                 for row in search_results
             ]
-
             return {"results": results}
 
         except Exception as e:
