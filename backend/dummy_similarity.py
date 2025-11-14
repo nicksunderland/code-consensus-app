@@ -24,7 +24,7 @@ for tid in range(1, n_transactions + 1):
     })
 
 df_txn = pd.DataFrame(transactions)
-df_txn.to_csv('dummy_transactions.csv', index=False)
+df_txn.to_csv(os.path.expanduser('~/Downloads/dummy_transactions.csv'), index=False)
 print("Saved dummy_transactions.csv")
 
 # ----------------------------
