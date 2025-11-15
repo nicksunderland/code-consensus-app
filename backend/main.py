@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List
 from dotenv import load_dotenv
 from urllib.parse import urlparse, parse_qs
+import psycopg2
 
 load_dotenv()
 
@@ -25,6 +26,41 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+USER = os.getenv("user")
+PASSWORD = os.getenv("password")
+HOST = os.getenv("host")
+PORT = os.getenv("port")
+DBNAME = os.getenv("dbname")
+
+# Connect to the database
+try:
+    connection = psycopg2.connect(
+        user=USER,
+        password=PASSWORD,
+        host=HOST,
+        port=PORT,
+        dbname=DBNAME
+    )
+    print("Connection successful!")
+
+    # Create a cursor to execute SQL queries
+    cursor = connection.cursor()
+
+    # Example query
+    cursor.execute("SELECT NOW();")
+    result = cursor.fetchone()
+    print("Current Time:", result)
+
+    # Close the cursor and connection
+    cursor.close()
+    connection.close()
+    print("Connection closed.")
+
+except Exception as e:
+    print(f"Failed to connect: {e}")
+
+
 
 # --- Database Setup ---
 DATABASE_URL = os.environ.get("DATABASE_URL")
