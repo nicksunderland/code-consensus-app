@@ -27,7 +27,7 @@ import VueApexCharts from "vue3-apexcharts"
 
 const BASE_URL = import.meta.env.DEV
     ? 'http://localhost:8000'
-    : 'https://code-consensus-app.onrender.com';
+    : 'https://code-consensus.fly.dev';
 
 const apiClient = axios.create({ baseURL: BASE_URL });
 
