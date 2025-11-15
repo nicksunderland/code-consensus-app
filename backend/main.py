@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List
 from dotenv import load_dotenv
 from urllib.parse import urlparse, parse_qs
-import psycopg2
+import httpx
 
 load_dotenv()
 
@@ -27,41 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-USER = os.getenv("user")
-PASSWORD = os.getenv("password")
-HOST = os.getenv("host")
-PORT = os.getenv("port")
-DBNAME = os.getenv("dbname")
-
-# Connect to the database
-try:
-    connection = psycopg2.connect(
-        user=USER,
-        password=PASSWORD,
-        host=HOST,
-        port=PORT,
-        dbname=DBNAME
-    )
-    print("Connection successful!")
-
-    # Create a cursor to execute SQL queries
-    cursor = connection.cursor()
-
-    # Example query
-    cursor.execute("SELECT NOW();")
-    result = cursor.fetchone()
-    print("Current Time:", result)
-
-    # Close the cursor and connection
-    cursor.close()
-    connection.close()
-    print("Connection closed.")
-
-except Exception as e:
-    print(f"Failed to connect: {e}")
-
-
-
 # --- Database Setup ---
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
@@ -79,10 +44,11 @@ async def root():
     return {"message": "API is running!"}
 
 
-@app.get("/api/dbinfo")
 async def db_info():
     if not DATABASE_URL:
         return {"env_present": False}
+
+    # --- Parse DATABASE_URL ---
     p = urlparse(DATABASE_URL)
     # mask userinfo (user:pass)
     userinfo = p.netloc.split('@')[-1] if '@' in p.netloc else p.netloc
@@ -90,15 +56,35 @@ async def db_info():
     port = userinfo.split(':')[1] if ':' in userinfo else None
     query = dict(parse_qs(p.query))
     sslmode = query.get("sslmode", [""])[0]
-    return {
+
+    # --- Check IPv6 support ---
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("https://ifconfig.co/ip")
+            ipv6_address = response.text.strip()
+            ipv6_reachable = True
+    except Exception as e:
+        ipv6_address = None
+        ipv6_reachable = False
+        ipv6_error = str(e)
+
+    # --- Return combined info ---
+    result = {
         "env_present": True,
         "scheme": p.scheme,
         "host": host,
         "port": port,
         "path_db": p.path.lstrip("/"),
-        "sslmode_in_url": sslmode or None
+        "sslmode_in_url": sslmode or None,
+        "ipv6_reachable": ipv6_reachable,
     }
 
+    if not ipv6_reachable:
+        result["ipv6_error"] = ipv6_error
+    else:
+        result["ipv6_address"] = ipv6_address
+
+    return result
 
 @app.get("/api/status")
 async def get_status():
