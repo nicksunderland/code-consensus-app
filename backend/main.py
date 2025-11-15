@@ -44,6 +44,7 @@ async def root():
     return {"message": "API is running!"}
 
 
+@app.get("/api/db_info")
 async def db_info():
     if not DATABASE_URL:
         return {"env_present": False}
