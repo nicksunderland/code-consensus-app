@@ -406,3 +406,9 @@ async def get_cooccurrence(request: CooccurrenceRequest):
         except Exception as e:
             print(f"Error in /api/get-cooccurrence: {e}")
             raise HTTPException(status_code=500, detail="Failed to fetch co-occurring codes.")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    PORT = int(os.environ.get("PORT", 8080))  # Use Fly.io port
+    uvicorn.run("main:app", host="0.0.0.0", port=PORT, reload=True)
