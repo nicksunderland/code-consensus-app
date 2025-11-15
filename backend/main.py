@@ -4,9 +4,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import List
 from dotenv import load_dotenv
+from urllib.parse import urlparse, parse_qs
 
 load_dotenv()
 
@@ -37,6 +38,32 @@ AsyncSessionLocal = sessionmaker(
 
 
 # --- API Endpoints ---
+@app.get("/")
+async def root():
+    return {"message": "API is running!"}
+
+
+@app.get("/api/dbinfo")
+async def db_info():
+    if not DATABASE_URL:
+        return {"env_present": False}
+    p = urlparse(DATABASE_URL)
+    # mask userinfo (user:pass)
+    userinfo = p.netloc.split('@')[-1] if '@' in p.netloc else p.netloc
+    host = userinfo.split(':')[0]
+    port = userinfo.split(':')[1] if ':' in userinfo else None
+    query = dict(parse_qs(p.query))
+    sslmode = query.get("sslmode", [""])[0]
+    return {
+        "env_present": True,
+        "scheme": p.scheme,
+        "host": host,
+        "port": port,
+        "path_db": p.path.lstrip("/"),
+        "sslmode_in_url": sslmode or None
+    }
+
+
 @app.get("/api/status")
 async def get_status():
     async with AsyncSessionLocal() as session:
