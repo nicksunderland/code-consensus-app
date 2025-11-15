@@ -61,7 +61,7 @@ async def db_info():
     # --- Check IPv6 support ---
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get("https://ifconfig.co/ip")
+            response = await client.get("https://api64.ipify.org")
             ipv6_address = response.text.strip()
             ipv6_reachable = True
     except Exception as e:
