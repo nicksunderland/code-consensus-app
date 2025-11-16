@@ -44,10 +44,16 @@ watch(user, async (newUser) => {
   if (newUser) await fetchSavedPhenotypes()
 })
 const loginGoogle = async () => {
-  await supabase.auth.signInWithOAuth({ provider: 'google' })
+  await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin }
+      })
 }
 const loginGitHub = async () => {
-  await supabase.auth.signInWithOAuth({ provider: 'github' })
+  await supabase.auth.signInWithOAuth({
+    provider: 'github',
+    options: { redirectTo: window.location.origin }
+  })
 }
 const logout = async () => {
   await supabase.auth.signOut()
