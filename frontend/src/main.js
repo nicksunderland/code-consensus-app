@@ -8,6 +8,7 @@ import Toast from 'primevue/toast';
 import Tooltip from 'primevue/tooltip';
 import Aura from '@primevue/themes/aura'
 import {ConfirmationService} from "primevue";
+import Ripple from 'primevue/ripple';
 
 // apexcharts
 import VueApexCharts from "vue3-apexcharts";
@@ -21,6 +22,7 @@ const app = createApp(App)
 
 // use the PrimeVue library
 app.use(PrimeVue, {
+    ripple: true,
     theme: {
         preset: Aura,
         options: {
@@ -37,4 +39,5 @@ app.use(ConfirmationService)
 app.component('Toast', Toast);
 app.component('apexchart', VueApexCharts)
 app.directive('tooltip', Tooltip);
+app.directive('ripple', Ripple);
 app.mount('#app')
