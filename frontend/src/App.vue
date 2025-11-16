@@ -1,5 +1,7 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, reactive } from 'vue';
+
+import {supabase} from "@/supabase.js";
 import axios from 'axios';
 import Menubar from 'primevue/menubar';
 import ToggleSwitch from 'primevue/toggleswitch';
@@ -21,6 +23,8 @@ import Column from 'primevue/column';
 import { computed } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import 'primeicons/primeicons.css';
+import { useConfirm } from 'primevue/useconfirm'
+import ConfirmPopup from 'primevue/confirmpopup';
 import ProgressSpinner from 'primevue/progressspinner';
 import Message from 'primevue/message';
 import VueApexCharts from "vue3-apexcharts"
@@ -30,6 +34,25 @@ const BASE_URL = import.meta.env.DEV
     : 'https://code-consensus.fly.dev';
 
 const apiClient = axios.create({ baseURL: BASE_URL });
+
+
+
+
+//login things
+const user = ref(null)
+watch(user, async (newUser) => {
+  if (newUser) await fetchSavedPhenotypes()
+})
+const loginGoogle = async () => {
+  await supabase.auth.signInWithOAuth({ provider: 'google' })
+}
+const loginGitHub = async () => {
+  await supabase.auth.signInWithOAuth({ provider: 'github' })
+}
+const logout = async () => {
+  await supabase.auth.signOut()
+  user.value = null
+}
 
 
 //define save things
@@ -45,20 +68,208 @@ const saveOptions = [
     command: () => save('update')
   }
 ];
+const savedPhenotypes = ref([])
+
+
+
+const fetchSavedPhenotypes = async () => {
+  if (!user.value) return
+
+  try {
+    // Send request without user_id — Supabase infers user from session
+    const { data, error } = await supabase
+      .from('phenotypes')
+      .select('id, name')   // only rows matching RLS policy will be returned
+      .order('created_at', { ascending: false })
+
+    savedPhenotypes.value = data
+    console.log('Saved phenotypes:', savedPhenotypes.value)
+
+  } catch (err) {
+    console.error('Fetching saved phenotypes failed', err)
+  }
+}
+
+const nameError = ref(false)
+function flashNameError() {
+  nameError.value = true
+  setTimeout(() => {
+    nameError.value = false
+  }, 1200) // highlight for 1.2 seconds
+}
+const phenotype = reactive({
+  id: "",
+  name: "",
+  description: "",
+  selectedMetric: null,
+  filters: [],
+  config: {},
+  created_at: null,
+})
+
+const loadPhenotype = async (id) => {
+  if (!user.value) return
+
+  try {
+    const { data, error } = await supabase
+      .from('phenotypes')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (error) throw error
+
+    console.log(data)
+
+    phenotype.id = data.id
+    phenotype.name = data.name
+    phenotype.description = data.description ?? ""
+    phenotype.selectedMetric = data.metric ?? null
+    phenotype.filters = data.filters ?? []
+    phenotype.config = data.config ?? {}
+    phenotype.created_at = data.created_at
+
+    console.log("Loaded phenotype:", phenotype)
+
+  } catch (err) {
+    console.error("Failed to load phenotype", err)
+  }
+}
+
+const confirm = useConfirm();
+function confirmDelete(event) {
+  console.log("foo")
+  if (!phenotype?.name) return
+
+  confirm.require({
+    target: event.currentTarget,
+    message: `Are you sure you want to delete "${phenotype.name}"?`,
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Yes',
+    rejectLabel: 'No',
+    accept: async () => {
+      if (!phenotype?.id) {
+        toast.add({
+          severity: 'warn',
+          summary: 'Cannot delete',
+          detail: 'Phenotype has not been saved yet',
+          life: 3000
+        });
+        return;
+      }
+
+      try {
+        const { error } = await supabase
+          .from('phenotypes')
+          .delete()
+          .eq('id', phenotype.id);
+
+        if (error) throw error;
+
+        savedPhenotypes.value = savedPhenotypes.value.filter(
+          p => p.id !== phenotype.id
+        );
+
+        phenotype.id = ''
+        phenotype.name = ''
+        phenotype.description = ""
+        phenotype.selectedMetric = null
+        phenotype.filters = []
+        phenotype.config = {}
+        phenotype.created_at = null
+
+      } catch (err) {
+        console.error('Delete failed', err);
+        toast.add({
+          severity: 'error',
+          summary: 'Delete failed',
+          detail: err.message || err,
+          life: 3000
+        });
+      }
+    },
+    reject: () => {
+      console.log('Delete cancelled')
+    }
+  })
+}
 
 function mainSaveClick(event) {
   // event is the PointerEvent, ignore it
   save('save');
 }
 
-function save(action) {
-  console.log(`Action "${action}" is under development`);
-  toast.add({
-    severity: 'info',
-    summary: 'Not implemented',
-    detail: `"${action}" is under development`,
-    life: 3000
-  });
+async function save() {
+  if (!user.value) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Not logged in',
+      detail: 'Please log in to save a phenotype.',
+      life: 3000
+    })
+    return
+  }
+
+  // Check global phenotype name
+  console.log('phenotype name:', JSON.stringify(phenotype.name));
+  if (!phenotype.name || phenotype.name.trim() === '') {
+    flashNameError()
+    toast.add({
+      severity: 'warn',
+      summary: 'Missing name',
+      detail: 'Please give this phenotype a name before saving.',
+      life: 3000
+    })
+    return
+  }
+
+  try {
+    const payload = {
+      user_id: user.value.id,
+      name: phenotype.name.trim(),
+      // Later: add full phenotype JSON here
+      // data: phenotype
+    }
+
+    const { data, error } = await supabase
+      .from('phenotypes')
+      .insert(payload)
+      .select()
+
+    if (error) {
+      if (error.code === '23505') {
+        flashNameError()
+        toast.add({
+          severity: 'error',
+          summary: 'Name taken',
+          detail: `A phenotype named "${phenotype.name}" already exists.`,
+          life: 3000
+        })
+        return
+      }
+      throw error
+    }
+
+    const row = data[0]
+    savedPhenotypes.value.push(row)
+    phenotype.id  = row.id
+
+    toast.add({
+      severity: 'success',
+      summary: 'Saved',
+      detail: `Phenotype "${row.name}" saved successfully.`,
+      life: 3000
+    })
+
+  } catch (err) {
+    console.error('Saving phenotype failed', err)
+    toast.add({
+      severity: 'error',
+      summary: 'Error',
+      detail: `Failed to save phenotype: ${err.message || err}`,
+      life: 4000
+    })
+  }
 }
 
 // Define the search things
@@ -78,7 +289,6 @@ const makeSearchInput = () => ({
 })
 const searchInputs = ref([makeSearchInput()]);
 
-
 const addSearchTerm = () => searchInputs.value.push(makeSearchInput())
 const removeSearchTerm = (index) => {
   if (searchInputs.value.length > 1) {
@@ -90,8 +300,6 @@ const removeSearchTerm = (index) => {
 const nodes = ref([]);
 const selectedNodeKeys = ref({});
 const expandedNodeKeys = ref({});
-const descriptionSearch = ref('');
-const searchExecuted = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 
@@ -99,22 +307,49 @@ const errorMessage = ref('');
 const toast = useToast();
 
 // menu
-const menuItems = ref([
+const menuItems = computed(() => [
   {
-    label: 'Examples',
-    items: [
-      { label: 'Heart failure', icon: 'pi pi-fw pi-heart' },
-      { label: 'Coronary artery disease', icon: 'pi pi-heart-fill' }
-    ]
+    label: 'Saved Phenotypes',
+    icon: 'pi pi-save',
+    items: !user.value
+      ? [
+          { label: 'Please login', icon: 'pi pi-exclamation-triangle' }
+        ]
+      : savedPhenotypes.value.length === 0
+      ? [
+          { label: 'No saved phenotypes', icon: 'pi pi-info-circle' }
+        ]
+      : savedPhenotypes.value.map(pheno => ({
+          label: pheno.name,
+          icon: 'pi pi-file',
+          command: () => loadPhenotype(pheno.id)
+        }))
   },
   {
-    label: 'Help',
+    label: 'Examples',
+    icon: 'pi pi-book',
     items: [
-      { label: 'Documentation', icon: 'pi pi-fw pi-book' },
-      { label: 'About', icon: 'pi pi-fw pi-info-circle' }
+      { label: 'Heart failure', icon: 'pi pi-fw pi-heart' },
+      { label: 'Coronary artery disease', icon: 'pi pi-fw pi-heart-fill' }
     ]
-  }
-]);
+  },
+  !user.value
+    ? {
+        label: 'Login',
+        icon: 'pi pi-sign-in',
+        items: [
+          { label: 'Google', icon: 'pi pi-google', command: loginGoogle },
+          { label: 'GitHub', icon: 'pi pi-github', command: loginGitHub }
+        ]
+      }
+    : {
+        label: user.value.user_metadata.full_name || user.value.email,
+        icon: 'pi pi-user',
+        items: [
+          { label: 'Logout', icon: 'pi pi-sign-out', command: logout }
+        ]
+      }
+])
 
 // Lazy-loading children
 const onNodeExpand = async (node) => {
@@ -142,21 +377,6 @@ const onNodeExpand = async (node) => {
 };
 
 // Ensures the root nodes load when page loads
-onMounted(async () => {
-  // 1. Wait for the root nodes (systems) to be fetched and loaded into 'nodes.value'
-  await onNodeExpand(null);
-
-  // 2. Now that 'nodes.value' has the data, map it for your MultiSelect
-  searchSystemsOptions.value = nodes.value.map(systemNode => {
-    // Assumes your API response (in 'systemNode.data') has id and code
-    return {
-      id: systemNode.data.system_id, // e.g., 1
-      name: systemNode.data.code     // e.g., "ICD-10"
-    };
-  });
-
-  console.log('Systems for MultiSelect:', searchSystemsOptions.value);
-});
 
 const runSearch = async () => {
   // Build payload for the simplified backend
@@ -523,6 +743,29 @@ async function runAnalysis() {
 }
 
 
+onMounted(async () => {
+  // --- Your existing logic ---
+  await onNodeExpand(null);
+
+  // populate saved phenos if logged in
+  if (user.value) await fetchSavedPhenotypes()
+
+  searchSystemsOptions.value = nodes.value.map(systemNode => ({
+    id: systemNode.data.system_id,
+    name: systemNode.data.code
+  }));
+
+  console.log('Systems for MultiSelect:', searchSystemsOptions.value);
+
+  // --- Supabase auth setup ---
+  // 1. Restore session on page load
+  const { data: { session } } = await supabase.auth.getSession()
+  user.value = session?.user ?? null
+  // 2. Listen for future login/logout events
+  supabase.auth.onAuthStateChange((_event, session) => {
+    user.value = session?.user ?? null
+  })
+})
 </script>
 
 
@@ -530,20 +773,17 @@ async function runAnalysis() {
   <!-- Toasts - messages -->
   <Toast position="bottom-right"/>
 
+
   <div class="app-container">
     <!-- Top bar with title and menu -->
-    <Menubar>
+    <Menubar :model="menuItems" appendTo="body">
       <!-- Title on the left -->
       <template #start>
         <div class="menubar-title flex align-items-center">
           <i class="pi pi-users title-icon"></i>
           <span class="title-text">Code Consensus</span>
         </div>
-      </template>
-
-      <!-- Menu items on the right -->
-      <template #end>
-        <Menubar :model="menuItems" />
+        <Divider layout="vertical" />
       </template>
     </Menubar>
 
@@ -632,10 +872,25 @@ async function runAnalysis() {
                 class="auto-select-search"
             />
           </span>
+          <Divider layout="vertical" />
+          <InputText
+            v-tooltip.top="{value: 'Phenotype name', showDelay: 300}"
+            type="text"
+            v-model="phenotype.name"
+            :invalid="nameError"
+            placeholder="Enter phenotype name"
+          />
           <SplitButton
             label="Save"
             @click="mainSaveClick"
             :model="saveOptions"
+          />
+          <ConfirmPopup></ConfirmPopup>
+          <Button
+            @click="confirmDelete($event)"
+            label="Delete"
+            severity="danger"
+            :disabled="!phenotype?.id"
           />
         </div>
       </template>

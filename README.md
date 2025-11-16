@@ -2,7 +2,7 @@
 
 Frontend: netlify.com
 
-Backend: render.com
+Backend: fly.io
 
 Launch the backend locally: 
 ```bash
