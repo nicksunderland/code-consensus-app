@@ -1,21 +1,23 @@
 <script setup>
-
 import Card from 'primevue/card';
 import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import 'primeicons/primeicons.css';
 
+// capture the input arguments
+const { treeSearch } = defineProps({
+  treeSearch: { type: Object, required: true }
+})
 
 </script>
 
 <template>
-  <!-- Selected Codes Section -->
   <Card>
     <template #title>Selected Codes</template>
     <template #content>
       <DataTable
-        :value="selectedNodes"
+        :value="treeSearch.selectedNodes.value"
         :emptyMessage="'No nodes selected.'"
         responsiveLayout="scroll"
         scrollable
@@ -26,7 +28,7 @@ import 'primeicons/primeicons.css';
             <Button
                 icon="pi pi-trash"
                 label="Clear"
-                @click="selectedNodeKeys = {}"
+                @click="treeSearch.selectedNodeKeys.value = {}"
             />
           </div>
         </template>
@@ -39,7 +41,3 @@ import 'primeicons/primeicons.css';
   </Card>
 
 </template>
-
-<style scoped>
-
-</style>

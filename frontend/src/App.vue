@@ -5,34 +5,55 @@ import Divider from 'primevue/divider';
 import 'primeicons/primeicons.css';
 import AuthDialogs from '@/AuthDialogs.vue';
 import CreateProjectDialog from "@/CreateProjectDialog.vue";
-import SearchStrategy from "@/SearchStrategy.vue";
-import CodeTree from "@/CodeTree.vue";
+import TreeSearch from "@/TreeSearch.vue";
 import SelectedCodes from "@/SelectedCodes.vue";
-import HeatmapAnalysis from "@/HeatmapAnalysis.vue";
+import Analysis from "@/Analysis.vue";
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { useAuth } from '@/composables/useAuth.js'
 import { useProjects } from "@/composables/useProjects.js";
 import { usePhenotypes } from "@/composables/usePhenotypes.js";
 import { useMenu } from '@/composables/useMenu.js';
-
-// --- AUTH STATE & FUNCTIONS ---
-const auth = useAuth()
-
-// --- PROJECTS ---
-const projects = useProjects()
-
-// --- PHENOTYPES ---
-const phenotypes = usePhenotypes()
+import { useTreeSearch } from "@/composables/useTreeSearch.js";
+import {useAnalysis} from "@/composables/useAnalysis.js";
 
 // --- Toast ---
 const toast = useToast();
+
+// --- AUTH STATE & FUNCTIONS ---
+const auth = useAuth({
+  toast: toast
+})
+
+// --- PROJECTS ---
+const projects = useProjects({
+  toast: toast,
+  auth: auth
+})
+
+// --- PHENOTYPES ---
+const phenotypes = usePhenotypes({
+  toast: toast,
+  auth: auth,
+  projects: projects
+})
+
+// --- TREE ---
+const treeSearch = useTreeSearch({
+  toast: toast
+})
 
 // --- MENU ---
 const { menuItems } = useMenu({
   auth: auth,
   projects: projects,
   phenotypes: phenotypes
+})
+
+// --- ANALYSIS ---
+const analysis = useAnalysis({
+  toast: toast,
+  treeSearch: treeSearch
 })
 
 // --- WATCH USER LOGIN ---
@@ -56,8 +77,8 @@ watch(
   <!-- Toast messages -->
   <Toast position="bottom-right"/>
   <!-- Auth / login dialogs -->
-  <AuthDialogs/>
-  <CreateProjectDialog/>
+  <AuthDialogs :auth="auth"/>
+  <CreateProjectDialog :projects="projects"/>
   <!-- Top navigation -->
   <Menubar :model="menuItems" appendTo="body">
     <template #start>
@@ -70,10 +91,9 @@ watch(
   </Menubar>
   <!-- Main content -->
   <div class="app-container">
-    <SearchStrategy/>
-    <CodeTree/>
-    <SelectedCodes/>
-<!--    <HeatmapAnalysis/>-->
+    <TreeSearch :treeSearch="treeSearch" :phenotypes="phenotypes"/>
+    <SelectedCodes :treeSearch="treeSearch"/>
+    <Analysis :analysis="analysis"/>
   </div>
 </template>
 

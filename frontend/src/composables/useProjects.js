@@ -1,26 +1,23 @@
 import { ref, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase'
-import { useToast } from 'primevue/usetoast'
-import { useAuth } from '@/composables/useAuth'
-
-// ----------------------------
-// GLOBAL STATE
-// ----------------------------
-const projects = ref([])
-const currentProject = ref(null)
-const members = ref([])           // members of current project
-const showProjectDialog = ref(false)
-const isEditing = ref(false)
-const projectForm = reactive({
-  name: '',
-  description: '',
-  emails: []
-})
 
 
-export function useProjects() {
-  const toast = useToast()
-  const { user } = useAuth()
+export function useProjects({toast, auth}) {
+
+    // ----------------------------
+    // STATE
+    // ----------------------------
+    const projects = ref([])
+    const currentProject = ref(null)
+    const members = ref([])           // members of current project
+    const showProjectDialog = ref(false)
+    const isEditing = ref(false)
+    const projectForm = reactive({
+      name: '',
+      description: '',
+      emails: []
+    })
+
 
   // ---------------------------------------
   //  HELPERS
@@ -68,7 +65,7 @@ export function useProjects() {
       toast.add({ severity: 'warn', summary: 'Missing Project Name', detail: 'Please enter a name.' })
       return null
     }
-    if (!user.value) return null
+    if (!auth.user.value) return null
 
     if (isEditing.value && currentProject.value) {
       // -----------------------
@@ -114,7 +111,7 @@ export function useProjects() {
         .insert({
           name: projectForm.name,
           description: projectForm.description || '',
-          owner: user.value.id
+          owner: auth.user.value.id
         })
         .select()
         .single()
@@ -127,7 +124,7 @@ export function useProjects() {
       // Add owner as member
       await supabase.from('project_members').insert({
         project_id: data.id,
-        user_id: user.value.id,
+        user_id: auth.user.value.id,
         role: 'owner'
       })
 
@@ -144,7 +141,7 @@ export function useProjects() {
       // Update local state
       projects.value.push(data)
       currentProject.value = data
-      members.value = [{ user_id: user.value.id, role: 'owner' }]
+      members.value = [{ user_id: auth.user.value.id, role: 'owner' }]
 
       toast.add({
         severity: 'success',
@@ -161,7 +158,7 @@ export function useProjects() {
   // FETCH PROJECTS / MEMBERS
   // ---------------------------------------
   async function fetchProjects() {
-    if (!user.value) return
+    if (!auth.user.value) return
 
     const { data, error } = await supabase
       .from('projects')
@@ -172,7 +169,7 @@ export function useProjects() {
         owner,
         project_members!inner (user_id, role)
       `)
-      .eq('project_members.user_id', user.value.id)
+      .eq('project_members.user_id', auth.user.value.id)
       .order('created_at', { ascending: true })
 
     if (error) {

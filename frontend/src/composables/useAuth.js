@@ -1,6 +1,5 @@
 import { ref, computed } from 'vue'
 import { supabase } from '@/composables/useSupabase.js'
-import { useToast } from 'primevue/usetoast'
 
 
 // globals
@@ -14,8 +13,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 })
 
 
-export function useAuth() {
-  const toast = useToast()
+export function useAuth({ toast }) {
 
   // Helper for error notifications
   function showError(summary, error) {

@@ -8,7 +8,9 @@ import Divider from 'primevue/divider'
 import { useAuth } from '@/composables/useAuth.js'
 
 // --- Directly use the auth composable ---
-const auth = useAuth()
+const { auth } = defineProps({
+  auth: { type: Object, required: true },
+})
 
 // --- FORMS ---
 const loginForm = ref({ email: '', password: '' })

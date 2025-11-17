@@ -87,6 +87,7 @@ async def db_info():
 
     return result
 
+
 @app.get("/api/status")
 async def get_status():
     async with AsyncSessionLocal() as session:

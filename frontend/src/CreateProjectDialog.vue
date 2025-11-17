@@ -5,14 +5,20 @@ import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 
-const projects = useProjects()
+// --- Directly use the composables ---
+const { projects } = defineProps({
+  projects: { type: Object, required: true },
+})
+
+// destructure top-level refs for v-model:visible to prevent warning on type
+const { showProjectDialog } = projects
 
 </script>
 
 <template>
   <Dialog
     header="Create Project"
-    v-model:visible="projects.showProjectDialog"
+    v-model:visible="showProjectDialog"
     modal
     :closable="true"
     appendTo="self"

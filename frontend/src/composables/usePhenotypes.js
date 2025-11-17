@@ -1,68 +1,104 @@
 // /src/composables/usePhenotypes.js
 import { ref, computed } from 'vue'
 import { supabase } from '@/composables/useSupabase.js'
-import { useAuth } from '@/composables/useAuth.js'
-import { useProjects } from '@/composables/useProjects.js'
-import { useToast } from 'primevue/usetoast'
 
-const phenotypes = ref([])
-const currentPhenotype = ref(null)
-const loading = ref(false)
 
-export function usePhenotypes() {
-  const { user } = useAuth()
-  const { currentProject } = useProjects()
-  const toast = useToast()
+export function usePhenotypes({toast, auth, projects}) {
+  // ----------------------------
+  // STATE
+  // ----------------------------
+  const phenotypes = ref([]);          // list for active project
+  const currentPhenotype = ref({name: ''});  // loaded full phenotype
+  const loading = ref(false);
+  const nameError = ref(false)
+  function flashNameError() {
+      nameError.value = true
+      setTimeout(() => {
+        nameError.value = false
+      }, 1200) // highlight for 1.2 seconds
+  }
+
+
+  // ----------------------------
+  // HELPERS
+  // ----------------------------
+  function guardProject() {
+    if (!auth.user.value) {
+      toast.add({ severity: "warn", summary: "Not logged in" });
+      return false;
+    }
+    if (!projects.currentProject.value) {
+      toast.add({ severity: "warn", summary: "No project selected" });
+      return false;
+    }
+    return true;
+  }
 
   // Load phenotypes for the active project only
   async function fetchPhenotypes() {
-    if (!user.value || !currentProject.value) return
+    if (!guardProject()) return;
 
     loading.value = true
 
     const { data, error } = await supabase
       .from("phenotypes")
       .select("id, name, description, created_at")
-      .eq("project_id", currentProject.value.id)
+      .eq("project_id", projects.currentProject.value.id)
       .order("created_at", { ascending: false })
 
     loading.value = false
 
     if (error) {
-      console.error("Fetch phenotypes failed", error)
-      return
+      toast.add({ severity: "error", summary: "Load failed", detail: error.message });
+      return;
     }
 
     phenotypes.value = data
   }
 
+  // ----------------------------
+  // LOAD ONE PHENOTYPE
+  // ----------------------------
   async function loadPhenotype(id) {
+
+    loading.value = true;
+
     const { data, error } = await supabase
       .from('phenotypes')
       .select('*')
       .eq('id', id)
       .single()
-    if (!error) currentPhenotype.value = data
+
+    loading.value = false;
+
+    if (error) {
+      toast.add({ severity: "error", summary: "Load failed", detail: error.message });
+      return;
+    }
+
+    currentPhenotype.value = data;
   }
 
-  // Save a phenotype (always requires project_id)
+  // ----------------------------
+  // CREATE NEW PHENOTYPE
+  // ----------------------------
   async function savePhenotype(newName) {
-    if (!user.value || !currentProject.value) return
+    if (!guardProject()) return;
 
-    if (!newName || newName.trim() === "") {
+    if (!newName || !newName.trim()) {
       toast.add({
         severity: "warn",
         summary: "Missing name",
-        detail: "Please give this phenotype a name.",
-      })
-      return
+        detail: "Please provide a name.",
+      });
+      return;
     }
 
     const { data, error } = await supabase
       .from("phenotypes")
       .insert({
-        user_id: user.value.id,
-        project_id: currentProject.value.id,
+        user_id: auth.user.value.id,
+        project_id: projects.currentProject.value.id,
         name: newName.trim(),
       })
       .select()
@@ -71,43 +107,60 @@ export function usePhenotypes() {
     if (error) {
       if (error.code === "23505") {
         toast.add({
-          severity: "error",
-          summary: "Name taken",
-          detail: `A phenotype named "${newName}" already exists in this project.`,
-        })
-        return
+          severity: "warn",
+          summary: "Name exists",
+          detail: `"${name}" already exists in this project.`,
+        });
+        return;
       }
-      console.error("Saving phenotype failed", error)
-      return
+      toast.add({ severity: "error", summary: "Save failed", detail: error.message });
+      return;
     }
 
     phenotypes.value.unshift(data)
+
     toast.add({
       severity: "success",
       summary: "Saved",
       detail: `Phenotype "${data.name}" saved.`,
     })
+
+    return data;
   }
 
-  // Delete phenotype
+  // ----------------------------
+  // DELETE
+  // ----------------------------
   async function deletePhenotype(id) {
+
     const { error } = await supabase
       .from("phenotypes")
       .delete()
       .eq("id", id)
 
     if (error) {
-      console.error("Delete failed", error)
-      return
+      toast.add({ severity: "error", summary: "Delete failed", detail: error.message });
+      return;
     }
 
-    phenotypes.value = phenotypes.value.filter(p => p.id !== id)
+    phenotypes.value = phenotypes.value.filter(p => p.id !== id);
+
+    if (currentPhenotype.value?.id === id) {
+      currentPhenotype.value = null;
+    }
+
+    toast.add({
+      severity: "success",
+      summary: "Deleted",
+      detail: "Phenotype removed.",
+    });
   }
 
   return {
     phenotypes,
     currentPhenotype,
     loading,
+    nameError,
     fetchPhenotypes,
     savePhenotype,
     deletePhenotype,

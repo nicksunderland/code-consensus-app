@@ -1,5 +1,6 @@
 <script setup>
-
+import { toRefs } from "vue"
+import apexchart from "vue3-apexcharts"
 import Card from 'primevue/card';
 import Panel from 'primevue/panel';
 import Divider from 'primevue/divider';
@@ -8,6 +9,20 @@ import Button from 'primevue/button';
 import Select from 'primevue/select';
 import 'primeicons/primeicons.css';
 
+// properties
+const props = defineProps({
+  analysis: { type: Object, required: true }
+})
+
+// deconstruct
+const { state, methods, other } = props.analysis
+
+// keep reactivity
+const { sliderRange, sliderMin, sliderMax, sliderStep, chartOptions, series, selectedMetric } = state;
+
+// get functions and other
+const { runAnalysis, metricTooltip } = methods
+const { metricOptions } = other
 
 </script>
 
@@ -50,7 +65,9 @@ import 'primeicons/primeicons.css';
                 id="threshold"
               />
             </div>
-            <div class="control-value">Selected: {{ sliderRange[0] }} to {{ sliderRange[1] }}</div>
+            <div class="control-value">
+              Selected: {{ sliderRange[0] }} to {{ sliderRange[1] }}
+            </div>
             <Divider />
             <Button
                 icon="pi pi-play"
@@ -65,7 +82,3 @@ import 'primeicons/primeicons.css';
   </Card>
 
 </template>
-
-<style scoped>
-
-</style>
