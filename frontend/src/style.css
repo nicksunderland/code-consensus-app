@@ -24,6 +24,9 @@ body {
 .menubar-title {
   display: flex;
   align-items: center;
+  gap: 2rem;
+  padding: 0.5rem;
+  width: 100%;
 }
 
 /* Make the PrimeIcon larger reliably */

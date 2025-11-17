@@ -346,7 +346,7 @@ if __name__ == "__main__":
     print("\nEnsure the following before running:")
     print("1. Database tables created using create_code_tables_sql()")
     print("2. SUPABASE_URL and SUPABASE_KEY environment variables set")
-    print("3. Run: pip install supabase\n")
+    print("3. Run: pip install useSupabase\n")
     print("=" * 60 + "\n")
 
     # Uncomment to print SQL for creating the tables
