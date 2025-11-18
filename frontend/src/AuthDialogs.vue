@@ -5,17 +5,27 @@ import InputText from 'primevue/inputtext'
 import Password from 'primevue/password'
 import Button from 'primevue/button'
 import Divider from 'primevue/divider'
+import { useToast } from "primevue/usetoast";
 import { useAuth } from '@/composables/useAuth.js'
 
-// --- Directly use the auth composable ---
-const { auth } = defineProps({
-  auth: { type: Object, required: true },
+// --- composables ---
+const auth = useAuth()
+
+
+// Forms
+const loginForm = ref({
+  email: '',
+  password: ''
 })
 
-// --- FORMS ---
-const loginForm = ref({ email: '', password: '' })
-const magicForm = ref({ email: '' })
-const signupForm = ref({ email: '', password: '' })
+const signupForm = ref({
+  email: '',
+  password: ''
+})
+
+const magicForm = ref({
+  email: ''
+})
 
 // --- Computed dialog visibility ---
 const loginVisible = computed({
@@ -33,26 +43,33 @@ const signupVisible = computed({
 
 // --- Actions ---
 const login = async () => {
-  if (!loginForm.value.email || !loginForm.value.password) return
-  await auth.loginEmailPassword(loginForm.value.email, loginForm.value.password)
-  loginForm.value.email = ''
-  loginForm.value.password = ''
-  auth.closeDialog()
+  const { email, password } = loginForm.value
+  if (!email || !password) return
+  const success = await auth.loginEmailPassword(email, password)
+  if (success) {
+    loginForm.value = { email: '', password: '' }
+    auth.closeDialog()
+  }
 }
 
 const signup = async () => {
-  if (!signupForm.value.email || !signupForm.value.password) return
-  await auth.signupEmail(signupForm.value.email, signupForm.value.password)
-  signupForm.value.email = ''
-  signupForm.value.password = ''
-  auth.closeDialog()
+  const { email, password } = signupForm.value
+  if (!email || !password) return
+  const success = await auth.signupEmail(email, password)
+  if (success) {
+    signupForm.value = { email: '', password: '' }
+    auth.closeDialog()
+  }
 }
 
 const magicLogin = async () => {
-  if (!magicForm.value.email) return
-  await auth.loginMagicLink(magicForm.value.email)
-  magicForm.value.email = ''
-  auth.closeDialog()
+  const { email } = magicForm.value
+  if (!email) return
+  const success = await auth.loginMagicLink(email)
+  if (success) {
+    magicForm.value = { email: '' }
+    auth.closeDialog()
+  }
 }
 </script>
 

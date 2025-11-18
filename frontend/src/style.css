@@ -29,6 +29,13 @@ body {
   width: 100%;
 }
 
+
+
+
+
+
+
+
 /* Make the PrimeIcon larger reliably */
 .title-icon {
   font-size: 2rem !important; /* use !important to override Menubar styles */

@@ -16,60 +16,44 @@ import { usePhenotypes } from "@/composables/usePhenotypes.js";
 import { useMenu } from '@/composables/useMenu.js';
 import { useTreeSearch } from "@/composables/useTreeSearch.js";
 import {useAnalysis} from "@/composables/useAnalysis.js";
+import {useNotifications} from "@/composables/useNotifications.js";
 
-// --- Toast ---
-const toast = useToast();
-
-// --- AUTH STATE & FUNCTIONS ---
-const auth = useAuth({
-  toast: toast
+// set up toast - need to load the .js globals with toast function
+// however have to do in a component file (.vue). Load first so that
+// everything can pull a copy of notifications and get access to toasting
+const toast = useToast()
+const notifications = useNotifications()
+notifications.setErrorHandler((summary, error) => {
+    toast.add({ severity: 'error', summary, detail: error?.message || String(error) })
+})
+notifications.setSuccessHandler((summary, detail) => {
+    toast.add({ severity: 'success', summary, detail })
 })
 
-// --- PROJECTS ---
-const projects = useProjects({
-  toast: toast,
-  auth: auth
-})
-
-// --- PHENOTYPES ---
-const phenotypes = usePhenotypes({
-  toast: toast,
-  auth: auth,
-  projects: projects
-})
-
-// --- TREE ---
-const treeSearch = useTreeSearch({
-  toast: toast
-})
-
-// --- MENU ---
-const { menuItems } = useMenu({
-  auth: auth,
-  projects: projects,
-  phenotypes: phenotypes
-})
-
-// --- ANALYSIS ---
-const analysis = useAnalysis({
-  toast: toast,
-  treeSearch: treeSearch
-})
+// THINGS FROM COMPOSABLES ---
+const { user } = useAuth()
+const { menuItems } = useMenu()
+const projects = useProjects()
+const phenotypes = usePhenotypes()
 
 // --- WATCH USER LOGIN ---
 watch(
-  () => auth.user.value,
+  () => user.value,
   async (user) => {
+    console.log("watching user in App.vue")
     if (user) {
+      console.log("user valid - fetching")
       await projects.fetchProjects()
       await phenotypes.fetchPhenotypes()
     } else {
-      projects.projects.value = []
-      phenotypes.phenotypes.value = []
+      console.log("user invalid - emptying")
+      projects.emptyProjects()
+      phenotypes.emptyPhenotypes()
     }
   },
   { immediate: true } // also runs immediately if user is already logged in
 )
+
 
 </script>
 
@@ -77,8 +61,8 @@ watch(
   <!-- Toast messages -->
   <Toast position="bottom-right"/>
   <!-- Auth / login dialogs -->
-  <AuthDialogs :auth="auth"/>
-  <CreateProjectDialog :projects="projects"/>
+  <AuthDialogs/>
+  <CreateProjectDialog/>
   <!-- Top navigation -->
   <Menubar :model="menuItems" appendTo="body">
     <template #start>
@@ -88,12 +72,16 @@ watch(
       </div>
       <Divider layout="vertical" />
     </template>
+    <template #end>
+
+    </template>
+
   </Menubar>
   <!-- Main content -->
   <div class="app-container">
-    <TreeSearch :treeSearch="treeSearch" :phenotypes="phenotypes"/>
-    <SelectedCodes :treeSearch="treeSearch"/>
-    <Analysis :analysis="analysis"/>
+    <TreeSearch/>
+    <SelectedCodes/>
+    <Analysis/>
   </div>
 </template>
 

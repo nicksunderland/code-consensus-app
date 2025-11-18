@@ -1,266 +1,261 @@
 import { ref, reactive, computed } from 'vue'
 import { apiClient } from '@/composables/apiClient.js'
+import { useNotifications } from './useNotifications'
 
-export function useTreeSearch({toast}) {
-  // ------------------------------------------------------------
-  // TREE STATE
-  // ------------------------------------------------------------
-  const nodes = ref([])
-  const selectedNodeKeys = ref({})
-  const expandedNodeKeys = ref({})
-  const loading = ref(false)
-  const errorMessage = ref(null)
-  const selectedNodes = computed(() => {
-      const flat = flattenedNodes(nodes.value);
-      return flat
+// required composables
+const { emitError, emitSuccess } = useNotifications()
+
+// ---------------------------------------------
+// GLOBAL STATE
+// ---------------------------------------------
+const nodes = ref([])
+const selectedNodeKeys = ref({})
+const expandedNodeKeys = ref({})
+const errorMessage = ref(null)
+const autoSelect = ref(false)
+const selectedNodes = computed(() => {
+    const flattenedNodes = (nodeList) => {
+        const result = [];
+
+        const traverse = (nodes) => {
+            if (!Array.isArray(nodes)) return;
+
+            nodes.forEach((node) => {
+                result.push(node);
+
+                if (Array.isArray(node.children) && node.children.length) {
+                    traverse(node.children);
+                }
+            });
+        };
+
+        traverse(nodeList);
+        return result;
+    };
+    const flat = flattenedNodes(nodes.value);
+    return flat
         .filter(node => selectedNodeKeys.value[node.key?.toString()])
         .map(node => ({
-          key: node.key,
-          leaf: node.leaf,
-          selectable: node.selectable,
-          ...node.data,
-          found_in_search: node.data.found_in_search ? 'Yes' : 'No',
+            key: node.key,
+            leaf: node.leaf,
+            selectable: node.selectable,
+            ...node.data,
+            found_in_search: node.data.found_in_search ? 'Yes' : 'No',
         }));
-  });
-  const flattenedNodes = (nodeList) => {
-      const result = [];
-
-      const traverse = (nodes) => {
-        if (!Array.isArray(nodes)) return;
-
-        nodes.forEach((node) => {
-          result.push(node);
-
-          if (Array.isArray(node.children) && node.children.length) {
-            traverse(node.children);
-          }
-        });
-  };
-
-  traverse(nodeList);
-  return result;
-};
-
-
-  // ------------------------------------------------------------
-  // SEARCH OPTIONS
-  // ------------------------------------------------------------
-  const autoSelect = ref(false)
-  const searchInOptions = ref([
-    { label: 'Codes', value: 'code' },
+});
+const searchInOptions = [
+    { label: 'Codes',       value: 'code'        },
     { label: 'Description', value: 'description' },
-  ])
-  const searchSystemsOptions = ref([
+]
+const searchSystemsOptions = ref([
     { name: 'ICD-10', id: 1 },
-  ])
+])
+const searchInputs = ref([])
 
-  // ------------------------------------------------------------
-  // SEARCH INPUT MODEL
-  // ------------------------------------------------------------
-  const makeSearchInput = () => ({
-    text: '',
-    regex: false,
-    columns: searchInOptions.value.map(x => x.value),
-    system_ids: searchSystemsOptions.value.map(x => x.id),
-  })
-  const searchInputs = ref([makeSearchInput()])
-  function addSearchTerm() {
-    searchInputs.value.push(makeSearchInput())
-  }
-  function removeSearchTerm(index) {
-    if (searchInputs.value.length > 1) {
-      searchInputs.value.splice(index, 1)
+// ---------------------------------------------
+// COMPOSABLE
+// ---------------------------------------------
+export function useTreeSearch() {
+
+    function clearSearchFlags(nodesArr) {
+
+        if (!Array.isArray(nodesArr)) return
+
+        nodesArr.forEach(n => {
+            if (n?.data) n.data.found_in_search = false
+            if (Array.isArray(n.children)) clearSearchFlags(n.children)
+        })
     }
-  }
 
-  // ------------------------------------------------------------
-  // CLEAR SEARCH FLAGS
-  // ------------------------------------------------------------
-  function clearSearchFlags(nodesArr) {
-    if (!Array.isArray(nodesArr)) return
-    nodesArr.forEach(n => {
-      if (n?.data) n.data.found_in_search = false
-      if (Array.isArray(n.children)) clearSearchFlags(n.children)
+    // ------------------------------------------------------------
+    // SEARCH INPUT MODEL
+    // ------------------------------------------------------------
+    const makeSearchInput = () => ({
+        text: '',
+        regex: false,
+        columns: searchInOptions.map(x => x.value),
+        system_ids: searchSystemsOptions.value.map(x => x.id),
     })
-  }
 
-  // ------------------------------------------------------------
-  // RUN SEARCH
-  // ------------------------------------------------------------
-  async function runSearch() {
-      console.log("selectedNodeKeys internal:", selectedNodeKeys.value)
-    const payload = {
-      searches: searchInputs.value
-        .filter(s => s.text.trim())
-        .map(s => ({
-          text: s.text.trim(),
-          regex: s.regex,
-          columns: s.columns,
-          system_ids: s.system_ids,
-        })),
-      limit: 100,
+    function addSearchTerm() {
+        searchInputs.value.push(makeSearchInput())
     }
 
-    if (payload.searches.length === 0) {
-      toast.add({
-        severity: 'warn',
-        summary: 'No Search Input',
-        detail: 'Please enter at least one search term.',
-      })
-      return
-    }
-
-    try {
-      const res = await apiClient.post('/api/search-nodes', payload)
-
-      // clear old flags first
-      clearSearchFlags(nodes.value)
-
-      // merge search results into tree
-      mergeSearchNodesIntoTree({
-        results: res.data.results,
-        ancestor_map: res.data.ancestor_map,
-        treeNodes: nodes.value,
-        expandedKeys: expandedNodeKeys.value,
-      })
-
-      toast.add({
-        severity: 'success',
-        summary: 'Search Complete',
-        detail: `${res.data.results.length} items found.`,
-      })
-
-    } catch (err) {
-      toast.add({
-        severity: 'error',
-        summary: 'Search Failed',
-        detail: err?.response?.data?.detail || err.message,
-      })
-    }
-
-  }
-
-  // ------------------------------------------------------------
-  // LAZY LOAD TREE CHILDREN
-  // ------------------------------------------------------------
-  const onNodeExpand = async (node) => {
-      console.log("async function onNodeExpand(node)")
-      const isRoot = !node;
-      const parentId = isRoot ? null : node.key;
-
-      if (isRoot || !node.leaf) {
-        if (isRoot) loading.value = true;
-        if (node) node.loading = true;
-        try {
-          const res = await apiClient.get('/api/tree-nodes', { params: { parent_id: parentId } });
-          const children = res.data.map(child => ({ ...child }));
-
-          if (isRoot) {
-            nodes.value = children;
-            console.log('Root nodes loaded:', nodes.value);
-          } else {
-            node.children = children;
-            console.log('Node after assigning children:', node);
-          }
-        } catch (err) {
-          console.error('Failed to load children for node', node.key, err);
-        } finally {
-          if (node) node.loading = false;
+    function removeSearchTerm(index) {
+        if (searchInputs.value.length > 1) {
+            searchInputs.value.splice(index, 1)
         }
-      }
-      console.log("The nodes value", nodes.value)
-  };
+    }
 
-  function mergeSearchNodesIntoTree({ results, ancestor_map }) {
-      console.log("=== mergeSearchNodesIntoTree ===");
-      console.log("Results array length:", results.length);
-      console.log("Initial nodes.value:", nodes.value);
+    // ------------------------------------------------------------
+    // RUN SEARCH
+    // ------------------------------------------------------------
+    async function runSearch() {
 
-       // 🔹 Reset all existing found_in_search flags before applying new search results
-      clearSearchFlags(nodes.value);
+        const payload = {
+            searches: searchInputs.value
+                .filter(s => s.text.trim())
+                .map(s => ({
+                    text: s.text.trim(),
+                    regex: s.regex,
+                    columns: s.columns,
+                    system_ids: s.system_ids,
+                })),
+            limit: 100,
+        }
 
-      const searchResultIds = new Set(results.map(r => r.key));
+        if (payload.searches.length === 0) {
+            emitError("No Search Input", "Please enter at least one search term.")
+            return
+        }
 
-      results.forEach((result, resultIndex) => {
+        try {
+            const res = await apiClient.post('/api/search-nodes', payload)
+            clearSearchFlags(nodes.value)
 
-        const pathIds = result.data.materialized_path.split('/').filter(Boolean);
+            mergeSearchNodesIntoTree({
+                results: res.data.results,
+                ancestor_map: res.data.ancestor_map,
+                treeNodes: nodes.value,
+                expandedKeys: expandedNodeKeys.value,
+            })
 
-        let currentLevel = nodes.value; // assuming nodes is a ref
-        console.log(`\nProcessing result #${resultIndex}, pathIds:`, pathIds);
+            emitSuccess('Search Complete', `${res.data.results.length} items found.`)
 
-        pathIds.forEach((id, index) => {
-          console.log(`  At path index ${index}, id: ${id}`);
-          console.log("  currentLevel before find:", currentLevel);
+        } catch (err) {
+            emitError("Search Failed", `${err?.response?.data?.detail || err.message}`)
+        }
 
-          if (!Array.isArray(currentLevel)) {
-            console.error('currentLevel is not an array!', currentLevel);
-            currentLevel = [];
-          }
+    }
 
-          let node = currentLevel.find(n => n.key === id);
-          console.log("  Found node:", node);
+    // ------------------------------------------------------------
+    // LAZY LOAD TREE CHILDREN
+    // ------------------------------------------------------------
+    const onNodeExpand = async (node) => {
 
-          if (!node) {
-            // Use ancestor_map if available, otherwise fallback to result
-            const source = ancestor_map[id] || result;
-            node = {
-              key: id.toString(),
-              label: source.label,           // label for display
-              children: [],
-              leaf: index === pathIds.length - 1,
-              selectable: source.data.is_selectable,
-              data: {                        // preserve the original data object
-                ...source.data,
-                found_in_search: searchResultIds.has(id)
-              }
-            };
+        const isRoot = !node;
+        const parentId = isRoot ? null : node.key;
 
-            currentLevel.push(node);
-            console.log("  Created new node:", node);
+        console.log("parentId:", parentId)
+        console.log("isRoot:", isRoot)
 
-          } else {
-            // Node already exists, update search hit if applicable
-            if (searchResultIds.has(id)) {
-              node.data = { ...node.data, found_in_search: true };
-              console.log("  Updated existing node as search hit:", node);
+        if (isRoot || !node.leaf) {
+
+            if (node) node.loading = true;
+
+            try {
+                console.log("parentId:", parentId)
+                const res = await apiClient.get('/api/tree-nodes', { params: { parent_id: parentId } });
+                console.log("await apiClient.get:", res)
+
+                const children = res.data.map(child => ({ ...child }));
+
+                if (isRoot) {
+                    nodes.value = children;
+                    console.log('Root nodes loaded:', nodes.value);
+                } else {
+                    node.children = children;
+                    console.log('Node after assigning children:', node);
+                }
+
+            } catch (err) {
+                console.error('Failed to load children for node', node.key, err);
+            } finally {
+                if (node) node.loading = false;
             }
-          }
+        }
+        console.log("The nodes value", nodes.value)
+    };
 
-          // Mark ancestors as expanded
-          if (index < pathIds.length - 1) {
-            expandedNodeKeys.value[id] = true;
-          }
+    function mergeSearchNodesIntoTree({ results, ancestor_map }) {
+        console.log("=== mergeSearchNodesIntoTree ===");
+        console.log("Results array length:", results.length);
+        console.log("Initial nodes.value:", nodes.value);
 
-          currentLevel = node.children = node.children || [];
-          console.log("  currentLevel after update:", currentLevel);
+        // 🔹 Reset all existing found_in_search flags before applying new search results
+        clearSearchFlags(nodes.value);
+
+        const searchResultIds = new Set(results.map(r => r.key));
+
+        results.forEach((result, resultIndex) => {
+
+            const pathIds = result.data.materialized_path.split('/').filter(Boolean);
+
+            let currentLevel = nodes.value; // assuming nodes is a ref
+            console.log(`\nProcessing result #${resultIndex}, pathIds:`, pathIds);
+
+            pathIds.forEach((id, index) => {
+                console.log(`  At path index ${index}, id: ${id}`);
+                console.log("  currentLevel before find:", currentLevel);
+
+                if (!Array.isArray(currentLevel)) {
+                    console.error('currentLevel is not an array!', currentLevel);
+                    currentLevel = [];
+                }
+
+                let node = currentLevel.find(n => n.key === id);
+                console.log("  Found node:", node);
+
+                if (!node) {
+                    // Use ancestor_map if available, otherwise fallback to result
+                    const source = ancestor_map[id] || result;
+                    node = {
+                        key: id.toString(),
+                        label: source.label,           // label for display
+                        children: [],
+                        leaf: index === pathIds.length - 1,
+                        selectable: source.data.is_selectable,
+                        data: {                        // preserve the original data object
+                            ...source.data,
+                            found_in_search: searchResultIds.has(id)
+                        }
+                    };
+
+                    currentLevel.push(node);
+                    console.log("  Created new node:", node);
+
+                } else {
+                    // Node already exists, update search hit if applicable
+                    if (searchResultIds.has(id)) {
+                        node.data = { ...node.data, found_in_search: true };
+                        console.log("  Updated existing node as search hit:", node);
+                    }
+                }
+
+            // Mark ancestors as expanded
+            if (index < pathIds.length - 1) {
+                expandedNodeKeys.value[id] = true;
+            }
+
+            currentLevel = node.children = node.children || [];
+            console.log("  currentLevel after update:", currentLevel);
+            });
         });
-      });
-  }
+    }
 
 
 
-  // ------------------------------------------------------------
-  // EXPORT
-  // ------------------------------------------------------------
-  return {
-    // tree
-    nodes,
-    selectedNodeKeys,
-    expandedNodeKeys,
-    loading,
-    errorMessage,
-    onNodeExpand,
-    selectedNodes,
+    // ------------------------------------------------------------
+    // EXPORT
+    // ------------------------------------------------------------
+    return {
+        // tree
+        nodes,
+        selectedNodeKeys,
+        expandedNodeKeys,
+        errorMessage,
+        onNodeExpand,
+        selectedNodes,
 
-    // search
-    autoSelect,
-    searchInputs,
-    searchInOptions,
-    searchSystemsOptions,
-    addSearchTerm,
-    removeSearchTerm,
-    runSearch
-  }
+        // search
+        autoSelect,
+        searchInputs,
+        searchInOptions,
+        searchSystemsOptions,
+        addSearchTerm,
+        removeSearchTerm,
+        runSearch
+    }
 }
 
 

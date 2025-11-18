@@ -8,21 +8,10 @@ import Slider from 'primevue/slider';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import 'primeicons/primeicons.css';
-
-// properties
-const props = defineProps({
-  analysis: { type: Object, required: true }
-})
-
-// deconstruct
-const { state, methods, other } = props.analysis
+import { useAnalysis } from "@/composables/useAnalysis.js";
 
 // keep reactivity
-const { sliderRange, sliderMin, sliderMax, sliderStep, chartOptions, series, selectedMetric } = state;
-
-// get functions and other
-const { runAnalysis, metricTooltip } = methods
-const { metricOptions } = other
+const analysis = useAnalysis();
 
 </script>
 
@@ -38,8 +27,8 @@ const { metricOptions } = other
           <apexchart
             type="heatmap"
             height="350"
-            :options="chartOptions"
-            :series="series"
+            :options="analysis.chartOptions.value"
+            :series="analysis.series.value"
             width="100%" />
         </div>
 
@@ -47,9 +36,9 @@ const { metricOptions } = other
           <div class="control-group">
             <label for="metric">Metric</label>
             <Select
-                v-tooltip.top="metricTooltip(selectedMetric)"
-                v-model="selectedMetric"
-                :options="metricOptions"
+                v-tooltip.top="analysis.metricTooltip(analysis.selectedMetric)"
+                v-model="analysis.selectedMetric"
+                :options="analysis.metricOptions"
                 optionLabel="label"
                 optionValue="value"
                 placeholder="Select metric"
@@ -57,22 +46,22 @@ const { metricOptions } = other
             <label for="threshold" class="control-label">Threshold</label>
             <div class="slider-wrapper">
               <Slider
-                v-model="sliderRange"
+                v-model="analysis.sliderRange.value"
                 range
-                :min="sliderMin"
-                :max="sliderMax"
-                :step="sliderStep"
+                :min="analysis.sliderMin.value"
+                :max="analysis.sliderMax.value"
+                :step="analysis.sliderStep.value"
                 id="threshold"
               />
             </div>
             <div class="control-value">
-              Selected: {{ sliderRange[0] }} to {{ sliderRange[1] }}
+              Selected: {{ analysis.sliderRange.value[0] }} to {{ analysis.sliderRange.value[1] }}
             </div>
             <Divider />
             <Button
                 icon="pi pi-play"
                 label="Run analysis"
-                @click="runAnalysis"
+                @click="analysis.runAnalysis"
             />
           </div>
         </Panel>

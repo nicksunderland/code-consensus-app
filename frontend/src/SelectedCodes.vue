@@ -4,11 +4,12 @@ import Button from 'primevue/button';
 import DataTable from 'primevue/datatable';
 import Column from 'primevue/column';
 import 'primeicons/primeicons.css';
+import { useTreeSearch } from "@/composables/useTreeSearch.js";
+import { usePhenotypes } from "@/composables/usePhenotypes.js";
 
-// capture the input arguments
-const { treeSearch } = defineProps({
-  treeSearch: { type: Object, required: true }
-})
+// --- use composable ---
+const treeSearch = useTreeSearch()
+const phenotypes = usePhenotypes()
 
 </script>
 
