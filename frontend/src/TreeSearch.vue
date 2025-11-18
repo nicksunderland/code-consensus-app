@@ -55,7 +55,7 @@ onMounted(async () => {
     console.log("in onMounted TreeSearch.vue:", nodes)
     addSearchTerm()
     console.log("in onMounted TreeSearch.vue:", searchInputs)
-    //await onNodeExpand(null)
+    await onNodeExpand(null)
 
 
 

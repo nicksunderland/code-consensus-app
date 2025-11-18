@@ -1,5 +1,5 @@
 // /src/composables/usePhenotypes.js
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase.js'
 import { useProjects } from "@/composables/useProjects.js";
 import { useAuth } from "@/composables/useAuth.js";
@@ -127,7 +127,7 @@ export function usePhenotypes() {
         phenotypes.value = phenotypes.value.filter(p => p.id !== id);
 
         if (currentPhenotype.value?.id === id) {
-            currentPhenotype.value = null;
+            currentPhenotype.value = {name: ''};
         }
 
         emitSuccess("Deleted", "Phenotype removed.")
@@ -135,7 +135,7 @@ export function usePhenotypes() {
 
     function emptyPhenotypes() {
         phenotypes.value = []
-        currentPhenotype.value = null
+        currentPhenotype.value = {name: ''}
     }
 
     return {

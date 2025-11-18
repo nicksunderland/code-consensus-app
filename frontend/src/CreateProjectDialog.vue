@@ -15,18 +15,12 @@ const {
   saveProject
 } = useProjects()
 
-// --- Computed dialog visibility ---
-const projectDialogVisible = computed({
-  get: () => showProjectDialog,
-  set: (val) => showProjectDialog.value = val
-})
-
 </script>
 
 <template>
   <Dialog
     header="Create Project"
-    v-model:visible="projectDialogVisible"
+    v-model:visible="showProjectDialog"
     modal
     :closable="true"
     appendTo="self"
