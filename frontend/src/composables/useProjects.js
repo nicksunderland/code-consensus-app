@@ -1,11 +1,5 @@
 import { ref, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase'
-import { useAuth } from '@/composables/useAuth.js'
-import { useNotifications } from './useNotifications'
-
-// required composables
-const auth = useAuth()
-const { emitError, emitSuccess } = useNotifications()
 
 // globals - these are set once in memory
 /**
