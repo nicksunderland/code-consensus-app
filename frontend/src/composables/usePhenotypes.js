@@ -1,14 +1,9 @@
 // /src/composables/usePhenotypes.js
 import { ref, computed } from 'vue'
 import { supabase } from '@/composables/useSupabase.js'
-import {useProjects} from "@/composables/useProjects.js";
-import {useAuth} from "@/composables/useAuth.js";
+import { useProjects } from "@/composables/useProjects.js";
+import { useAuth } from "@/composables/useAuth.js";
 import { useNotifications } from './useNotifications'
-
-// required composables
-const { emitError, emitSuccess } = useNotifications()
-const auth = useAuth()
-const projects= useProjects()
 
 // globals - these are set once in memory
 const phenotypes = ref([]);          // list for active project
@@ -16,6 +11,11 @@ const currentPhenotype = ref({name: ''});  // loaded full phenotype
 
 // export
 export function usePhenotypes() {
+    // Get dependencies inside the composable function
+    const { emitError, emitSuccess } = useNotifications()
+    const auth = useAuth()
+    const projects = useProjects()
+
     // ----------------------------
     // STATE
     // ----------------------------

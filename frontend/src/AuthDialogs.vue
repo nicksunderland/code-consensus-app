@@ -9,8 +9,15 @@ import { useToast } from "primevue/usetoast";
 import { useAuth } from '@/composables/useAuth.js'
 
 // --- composables ---
-const auth = useAuth()
-
+const {
+  currentDialog,
+  closeDialog,
+  loginEmailPassword,
+  signupEmail,
+  loginMagicLink,
+  loginGoogle,
+  loginGitHub
+} = useAuth()
 
 // Forms
 const loginForm = ref({
@@ -29,46 +36,46 @@ const magicForm = ref({
 
 // --- Computed dialog visibility ---
 const loginVisible = computed({
-  get: () => auth.currentDialog.value === 'login',
-  set: val => { if (!val) auth.closeDialog() }
+  get: () => currentDialog === 'login',
+  set: val => { if (!val) closeDialog() }
 })
 const magicVisible = computed({
-  get: () => auth.currentDialog.value === 'magic',
-  set: val => { if (!val) auth.closeDialog() }
+  get: () => currentDialog === 'magic',
+  set: val => { if (!val) closeDialog() }
 })
 const signupVisible = computed({
-  get: () => auth.currentDialog.value === 'signup',
-  set: val => { if (!val) auth.closeDialog() }
+  get: () => currentDialog === 'signup',
+  set: val => { if (!val) closeDialog() }
 })
 
 // --- Actions ---
 const login = async () => {
   const { email, password } = loginForm.value
   if (!email || !password) return
-  const success = await auth.loginEmailPassword(email, password)
+  const success = await loginEmailPassword(email, password)
   if (success) {
     loginForm.value = { email: '', password: '' }
-    auth.closeDialog()
+    closeDialog()
   }
 }
 
 const signup = async () => {
   const { email, password } = signupForm.value
   if (!email || !password) return
-  const success = await auth.signupEmail(email, password)
+  const success = await signupEmail(email, password)
   if (success) {
     signupForm.value = { email: '', password: '' }
-    auth.closeDialog()
+    closeDialog()
   }
 }
 
 const magicLogin = async () => {
   const { email } = magicForm.value
   if (!email) return
-  const success = await auth.loginMagicLink(email)
+  const success = await loginMagicLink(email)
   if (success) {
     magicForm.value = { email: '' }
-    auth.closeDialog()
+    closeDialog()
   }
 }
 </script>
@@ -87,7 +94,7 @@ const magicLogin = async () => {
       </div>
 
       <div class="dialog-footer flex justify-center w-full gap-2">
-        <Button label="Cancel" class="p-button-text" @click="auth.closeDialog" />
+        <Button label="Cancel" class="p-button-text" @click="closeDialog" />
         <Button label="Login" @click="login" />
       </div>
 
@@ -95,8 +102,8 @@ const magicLogin = async () => {
 
       <div class="dialog-footer flex justify-center w-full gap-2">
         <Button label="Magic Link" icon="pi pi-link" @click="magicLogin" class="p-button-text" />
-        <Button label="Google" icon="pi pi-google" @click="auth.loginGoogle" class="p-button-text" />
-        <Button label="GitHub" icon="pi pi-github" @click="auth.loginGitHub" class="p-button-text" />
+        <Button label="Google" icon="pi pi-google" @click="loginGoogle" class="p-button-text" />
+        <Button label="GitHub" icon="pi pi-github" @click="loginGitHub" class="p-button-text" />
       </div>
     </div>
   </Dialog>
@@ -109,15 +116,15 @@ const magicLogin = async () => {
         <InputText v-model="magicForm.email" />
       </div>
       <div class="dialog-footer flex justify-center w-full gap-2">
-        <Button label="Cancel" class="p-button-text" @click="auth.closeDialog" />
+        <Button label="Cancel" class="p-button-text" @click="closeDialog" />
         <Button label="Send Magic Link" icon="pi pi-link" @click="magicLogin" class="p-button-text" />
       </div>
 
       <Divider />
 
       <div class="dialog-footer flex justify-center w-full gap-2">
-        <Button label="Google" icon="pi pi-google" @click="auth.loginGoogle" class="p-button-text" />
-        <Button label="GitHub" icon="pi pi-github" @click="auth.loginGitHub" class="p-button-text" />
+        <Button label="Google" icon="pi pi-google" @click="loginGoogle" class="p-button-text" />
+        <Button label="GitHub" icon="pi pi-github" @click="loginGitHub" class="p-button-text" />
       </div>
     </div>
   </Dialog>
@@ -135,7 +142,7 @@ const magicLogin = async () => {
       </div>
 
       <div class="dialog-footer flex justify-center w-full gap-2">
-        <Button label="Cancel" class="p-button-text" @click="auth.closeDialog" />
+        <Button label="Cancel" class="p-button-text" @click="closeDialog" />
         <Button label="Create Account" @click="signup" />
       </div>
     </div>

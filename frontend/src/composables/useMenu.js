@@ -3,12 +3,11 @@ import { useAuth } from "@/composables/useAuth.js";
 import { useProjects } from "@/composables/useProjects.js";
 import { usePhenotypes } from "@/composables/usePhenotypes.js";
 
-// --- composables ---
-const auth = useAuth()
-const projects= useProjects()
-const phenotypes= usePhenotypes()
-
 export function useMenu() {
+    // Get dependencies inside the composable function
+    const auth = useAuth()
+    const projects = useProjects()
+    const phenotypes = usePhenotypes()
 
     // Menu items
     const menuItems = computed(() => {

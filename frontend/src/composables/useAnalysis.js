@@ -1,11 +1,7 @@
 import { ref, computed, watch, reactive } from "vue"
 import { apiClient } from '@/composables/apiClient.js'
 import { useNotifications } from './useNotifications'
-import {useTreeSearch} from "@/composables/useTreeSearch.js";
-
-// required composables
-const { emitError, emitSuccess } = useNotifications()
-const treeSearch = useTreeSearch()
+import { useTreeSearch } from "@/composables/useTreeSearch.js";
 
 // -----------------------------
 // GLOBAL STATE
@@ -39,7 +35,10 @@ watch(selectedMetric, (newMetric) => {
   }
 })
 
-export function useAnalysis( ) {
+export function useAnalysis() {
+    // Get dependencies inside the composable function
+    const { emitError, emitSuccess } = useNotifications()
+    const treeSearch = useTreeSearch()
 
     function metricTooltip(metric) {
         switch (metric) {

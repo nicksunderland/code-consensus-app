@@ -2,9 +2,6 @@ import { ref, reactive, computed } from 'vue'
 import { apiClient } from '@/composables/apiClient.js'
 import { useNotifications } from './useNotifications'
 
-// required composables
-const { emitError, emitSuccess } = useNotifications()
-
 // ---------------------------------------------
 // GLOBAL STATE
 // ---------------------------------------------
@@ -56,6 +53,8 @@ const searchInputs = ref([])
 // COMPOSABLE
 // ---------------------------------------------
 export function useTreeSearch() {
+    // Get dependencies inside the composable function
+    const { emitError, emitSuccess } = useNotifications()
 
     function clearSearchFlags(nodesArr) {
 

@@ -8,8 +8,7 @@ import { useTreeSearch } from "@/composables/useTreeSearch.js";
 import { usePhenotypes } from "@/composables/usePhenotypes.js";
 
 // --- use composable ---
-const treeSearch = useTreeSearch()
-const phenotypes = usePhenotypes()
+const { selectedNodes, selectedNodeKeys } = useTreeSearch()
 
 </script>
 
@@ -18,7 +17,7 @@ const phenotypes = usePhenotypes()
     <template #title>Selected Codes</template>
     <template #content>
       <DataTable
-        :value="treeSearch.selectedNodes.value"
+        :value="selectedNodes"
         :emptyMessage="'No nodes selected.'"
         responsiveLayout="scroll"
         scrollable
@@ -29,7 +28,7 @@ const phenotypes = usePhenotypes()
             <Button
                 icon="pi pi-trash"
                 label="Clear"
-                @click="treeSearch.selectedNodeKeys.value = {}"
+                @click="selectedNodeKeys = {}"
             />
           </div>
         </template>

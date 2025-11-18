@@ -15,34 +15,52 @@ import {useTreeSearch} from "@/composables/useTreeSearch.js";
 import {usePhenotypes} from "@/composables/usePhenotypes.js";
 
 // --- use composable ---
-const treeSearch = useTreeSearch()
-const phenotypes = usePhenotypes()
+const {
+  nodes,
+  selectedNodeKeys,
+  expandedNodeKeys,
+  searchInputs,
+  searchInOptions,
+  searchSystemsOptions,
+  autoSelect,
+  addSearchTerm,
+  removeSearchTerm,
+  runSearch,
+  onNodeExpand
+} = useTreeSearch()
+
+const {
+  currentPhenotype,
+  nameError,
+  savePhenotype,
+  deletePhenotype
+} = usePhenotypes()
 
 const saveClickOptions = [
   {
     label: 'Save',
     icon: 'pi pi-save',
-    command: () => phenotypes.savePhenotype(phenotypes.currentPhenotype.value.name)
+    command: () => savePhenotype(currentPhenotype.name)
   },
   {
     label: 'Update',
     icon: 'pi pi-refresh',
-    command: () => phenotypes.savePhenotype(phenotypes.currentPhenotype.value.name)
+    command: () => savePhenotype(currentPhenotype.name)
   }
 ];
 
 
 // --- Load tree on component mount ---
 onMounted(async () => {
-    console.log("in onMounted TreeSearch.vue:", treeSearch.nodes.value)
-    treeSearch.addSearchTerm()
-    console.log("in onMounted TreeSearch.vue:", treeSearch.searchInputs.value)
-    //await treeSearch.onNodeExpand(null)
+    console.log("in onMounted TreeSearch.vue:", nodes)
+    addSearchTerm()
+    console.log("in onMounted TreeSearch.vue:", searchInputs)
+    //await onNodeExpand(null)
 
 
 
     // Populate MultiSelect system options (map so overwrites)
-    // treeSearch.searchSystemsOptions.value = treeSearch.nodes.value.map(node => ({
+    // searchSystemsOptions.value = nodes.value.map(node => ({
     //     id: node.data.system_id,
     //     name: node.data.code
     // }))
@@ -62,7 +80,7 @@ onMounted(async () => {
             rounded
             variant="outlined"
             size="small"
-            @click="treeSearch.addSearchTerm"
+            @click="addSearchTerm"
             aria-label="Add search input"
           />
         </span>
@@ -72,7 +90,7 @@ onMounted(async () => {
       <!-- Search Panel -->
       <div class="panel regex-panel">
         <div class="regex-list">
-          <div v-for="(input, index) in treeSearch.searchInputs.value" :key="index" class="regex-row">
+          <div v-for="(input, index) in searchInputs" :key="index" class="regex-row">
             <InputText
               v-tooltip.top="{value: 'Enter search term or regular expression', showDelay: 300}"
               type="text"
@@ -89,7 +107,7 @@ onMounted(async () => {
             <span v-tooltip.top="{value: 'Apply search to...', showDelay: 300}">
               <MultiSelect
                   v-model="input.columns"
-                  :options="treeSearch.searchInOptions"
+                  :options="searchInOptions"
                   optionLabel="label"
                   optionValue="value"
                   class="search-column"
@@ -98,7 +116,7 @@ onMounted(async () => {
             <span v-tooltip.top="{value: 'Coding systems', showDelay: 300}">
               <MultiSelect
                   v-model="input.system_ids"
-                  :options="treeSearch.searchSystemsOptions.value"
+                  :options="searchSystemsOptions"
                   optionLabel="name"
                   optionValue="id"
                   class="search-systems"
@@ -110,8 +128,8 @@ onMounted(async () => {
                 severity="danger"
                 rounded variant="outlined"
                 size="small"
-                :disabled="treeSearch.searchInputs.value.length === 1"
-                @click="treeSearch.removeSearchTerm(index)"
+                :disabled="searchInputs.length === 1"
+                @click="removeSearchTerm(index)"
                 aria-label="Remove search input"
               />
             </span>
@@ -127,11 +145,11 @@ onMounted(async () => {
       <div class="search-button-container">
         <Button
           label="Run Search"
-          @click="treeSearch.runSearch"
+          @click="runSearch"
         />
         <span v-tooltip.top="{value: 'Auto-select search results', showDelay: 300}">
           <ToggleSwitch
-              v-model="treeSearch.autoSelect"
+              v-model="autoSelect"
               class="auto-select-search"
           />
         </span>
@@ -139,21 +157,21 @@ onMounted(async () => {
         <InputText
           v-tooltip.top="{value: 'Phenotype name', showDelay: 300}"
           type="text"
-          v-model="phenotypes.currentPhenotype.name"
-          :invalid="phenotypes.nameError.value"
+          v-model="currentPhenotype.name"
+          :invalid="nameError"
           placeholder="Enter phenotype name"
         />
         <SplitButton
           label="Save"
-          @click="() => phenotypes.savePhenotype(phenotypes.currentPhenotype.name)"
+          @click="() => savePhenotype(currentPhenotype.name)"
           :model="saveClickOptions"
         />
         <ConfirmPopup></ConfirmPopup>
         <Button
-          @click="phenotypes.deletePhenotype($event)"
+          @click="deletePhenotype($event)"
           label="Delete"
           severity="danger"
-          :disabled="!phenotypes.currentPhenotype?.id"
+          :disabled="!currentPhenotype?.id"
         />
       </div>
     </template>
@@ -164,11 +182,11 @@ onMounted(async () => {
     <template #title>Codes</template>
     <template #content>
       <Tree
-        :value="treeSearch.nodes.value"
+        :value="nodes"
         selectionMode="multiple"
-        v-model:selectionKeys="treeSearch.selectedNodeKeys"
-        v-model:expandedKeys="treeSearch.expandedNodeKeys"
-        @node-expand="treeSearch.onNodeExpand"
+        v-model:selectionKeys="selectedNodeKeys"
+        v-model:expandedKeys="expandedNodeKeys"
+        @node-expand="onNodeExpand"
         loadingMode="icon"
         :lazy="true"
       >

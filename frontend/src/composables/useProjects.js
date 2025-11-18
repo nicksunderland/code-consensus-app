@@ -1,5 +1,7 @@
 import { ref, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase'
+import { useAuth } from '@/composables/useAuth.js'
+import { useNotifications } from './useNotifications'
 
 // globals - these are set once in memory
 /**
@@ -28,6 +30,9 @@ const projectForm = reactive({
 
 
 export function useProjects() {
+    // Get dependencies inside the composable function
+    const auth = useAuth()
+    const { emitError, emitSuccess } = useNotifications()
 
     function resetForm() {
         projectForm.name = ''

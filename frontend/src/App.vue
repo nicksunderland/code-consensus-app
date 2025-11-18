@@ -33,22 +33,22 @@ notifications.setSuccessHandler((summary, detail) => {
 // THINGS FROM COMPOSABLES ---
 const { user } = useAuth()
 const { menuItems } = useMenu()
-const projects = useProjects()
-const phenotypes = usePhenotypes()
+const { fetchProjects, emptyProjects } = useProjects()
+const { fetchPhenotypes, emptyPhenotypes } = usePhenotypes()
 
 // --- WATCH USER LOGIN ---
 watch(
-  () => user.value,
-  async (user) => {
+  user,
+  async (newUser) => {
     console.log("watching user in App.vue")
-    if (user) {
+    if (newUser) {
       console.log("user valid - fetching")
-      await projects.fetchProjects()
-      await phenotypes.fetchPhenotypes()
+      await fetchProjects()
+      await fetchPhenotypes()
     } else {
       console.log("user invalid - emptying")
-      projects.emptyProjects()
-      phenotypes.emptyPhenotypes()
+      emptyProjects()
+      emptyPhenotypes()
     }
   },
   { immediate: true } // also runs immediately if user is already logged in

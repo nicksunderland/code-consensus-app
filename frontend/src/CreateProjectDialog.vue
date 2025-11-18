@@ -7,12 +7,18 @@ import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 
 // --- use composable ---
-const projects = useProjects()
+const {
+  showProjectDialog,
+  isEditing,
+  projectForm,
+  closeDialog,
+  saveProject
+} = useProjects()
 
 // --- Computed dialog visibility ---
 const projectDialogVisible = computed({
-  get: () => projects.showProjectDialog.value,
-  set: (val) => projects.showProjectDialog.value = val
+  get: () => showProjectDialog,
+  set: (val) => showProjectDialog.value = val
 })
 
 </script>
@@ -28,20 +34,20 @@ const projectDialogVisible = computed({
   >
     <div class="label-input-div">
       <label class="project-dialog-label">Project Name</label>
-      <InputText v-model="projects.projectForm.name" placeholder="Enter project name"/>
+      <InputText v-model="projectForm.name" placeholder="Enter project name"/>
     </div>
 
     <div class="label-input-div">
       <label class="project-dialog-label">Description</label>
-      <Textarea v-model="projects.projectForm.description" rows="5" placeholder="Enter description"/>
+      <Textarea v-model="projectForm.description" rows="5" placeholder="Enter description"/>
     </div>
 
     <div class="label-input-div">
       <label class="project-dialog-label">Invite Members (emails)</label>
-      <div v-for="(email, index) in projects.projectForm.member_emails" :key="index" class="email-row">
+      <div v-for="(email, index) in projectForm.member_emails" :key="index" class="email-row">
         <InputText
-            v-model="projects.projectForm.member_emails[index]"
-            :disabled="projects.projectForm.member_ids[index] === projects.projectForm.owner"
+            v-model="projectForm.member_emails[index]"
+            :disabled="projectForm.member_ids[index] === projectForm.owner"
             placeholder="user@example.com"
             class="email-input"
         />
@@ -49,12 +55,12 @@ const projectDialogVisible = computed({
             icon="pi pi-times"
             severity="danger"
             rounded variant="outlined"
-            :disabled="projects.projectForm.member_ids[index] === projects.projectForm.owner"
+            :disabled="projectForm.member_ids[index] === projectForm.owner"
             size="small"
             @click="
-                projects.projectForm.member_emails.splice(index, 1);
-                projects.projectForm.member_ids.splice(index, 1);
-                projects.projectForm.member_roles.splice(index, 1)
+                projectForm.member_emails.splice(index, 1);
+                projectForm.member_ids.splice(index, 1);
+                projectForm.member_roles.splice(index, 1)
             "
         />
       </div>
@@ -63,9 +69,9 @@ const projectDialogVisible = computed({
           icon="pi pi-plus"
           class="p-button-text"
           @click="
-              projects.projectForm.member_emails.push('');
-              projects.projectForm.member_ids.push(null);
-              projects.projectForm.member_roles.push('member')
+              projectForm.member_emails.push('');
+              projectForm.member_ids.push(null);
+              projectForm.member_roles.push('member')
           "
       />
     </div>
@@ -75,11 +81,11 @@ const projectDialogVisible = computed({
           label="Cancel"
           icon="pi pi-times"
           class="p-button-text"
-          @click="projects.closeDialog()"/>
+          @click="closeDialog()"/>
       <Button
-        :label="projects.isEditing ? 'Update' : 'Create'"
+        :label="isEditing ? 'Update' : 'Create'"
         icon="pi pi-check"
-        @click="projects.saveProject()"
+        @click="saveProject()"
       />
     </div>
   </Dialog>
