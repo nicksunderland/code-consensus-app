@@ -56,6 +56,9 @@ export function useTreeSearch() {
     // Get dependencies inside the composable function
     const { emitError, emitSuccess } = useNotifications()
 
+    // ------------------------------------------------------------
+    // ADJUST NODE INCLUSION FLAGS
+    // ------------------------------------------------------------
     function clearSearchFlags(nodesArr) {
 
         if (!Array.isArray(nodesArr)) return
@@ -64,6 +67,13 @@ export function useTreeSearch() {
             if (n?.data) n.data.found_in_search = false
             if (Array.isArray(n.children)) clearSearchFlags(n.children)
         })
+    }
+
+    function resetTree() {
+        clearSearchFlags(nodes.value)
+        selectedNodeKeys.value = {}
+        expandedNodeKeys.value = {}
+        errorMessage.value = null
     }
 
     // ------------------------------------------------------------
@@ -232,8 +242,6 @@ export function useTreeSearch() {
         });
     }
 
-
-
     // ------------------------------------------------------------
     // EXPORT
     // ------------------------------------------------------------
@@ -245,6 +253,7 @@ export function useTreeSearch() {
         errorMessage,
         onNodeExpand,
         selectedNodes,
+        resetTree,
 
         // search
         autoSelect,

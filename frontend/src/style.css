@@ -123,6 +123,8 @@ body {
   align-items: center;     /* vertical alignment if needed */
   gap: 1rem;               /* space between buttons */
   flex-wrap: wrap;         /* wrap if viewport is small */
+    margin-top: 1rem;
+    margin-bottom: 1rem;
 }
 
 /* --- Trees Section --- */

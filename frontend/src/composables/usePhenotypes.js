@@ -7,7 +7,7 @@ import { useNotifications } from './useNotifications'
 
 // globals - these are set once in memory
 const phenotypes = ref([]);          // list for active project
-const currentPhenotype = ref({name: ''});  // loaded full phenotype
+const currentPhenotype = ref({id: '', user_id: '', name: '', description: '', project_id: '', source: '', isFresh: true});  // loaded full phenotype
 
 // export
 export function usePhenotypes() {
@@ -28,26 +28,37 @@ export function usePhenotypes() {
     // ----------------------------
     // HELPERS
     // ----------------------------
-    function guardProject() {
-        if (!auth.user.value) {
-            emitError("Not logged in")
-            return false
+    // check if an ID exists in the phenotypes DB table
+    async function phenotypeExists(id) {
+        if (!auth.user.value) return;
+        const { data, error } = await supabase
+            .from('phenotypes')
+            .select('id')
+            .eq('id', id)
+            .single()
+
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return false; // not found
+            }
+            emitError("Error checking phenotype", error.message)
+            return false;
         }
-        if (!projects.currentProject.value) {
-            emitError("No project selected")
-            return false
-        }
-        return true;
+
+        return data !== null;
     }
 
-  // Load phenotypes for the active project only
-    async function fetchPhenotypes() {
-        if (!guardProject()) return;
+    // Load phenotypes for the active project only
+    async function fetchPhenotypes(projectId) {
+        if (!auth.user.value) return;
+        if (!projectId) return;
+        console.log("projectID:", projectId)
+
         loading.value = true
 
         const { data, error } = await supabase
             .from("phenotypes")
-            .select("id, name, description, created_at")
+            .select("id, name, description, source, created_at")
             .eq("project_id", projects.currentProject.value.id)
             .order("created_at", { ascending: false })
 
@@ -81,9 +92,12 @@ export function usePhenotypes() {
   // ----------------------------
   // CREATE NEW PHENOTYPE
   // ----------------------------
-    async function savePhenotype(newName) {
-        if (!guardProject()) return
-        if (!newName?.trim()) {
+    async function savePhenotype() {
+        if (!auth.user.value) return
+
+        const phenoName = currentPhenotype.value.name?.trim()
+
+        if (!phenoName) {
             flashNameError()
             return emitError("Missing name", "Please provide a name.")
         }
@@ -92,15 +106,17 @@ export function usePhenotypes() {
             .from("phenotypes")
             .insert({
                 user_id: auth.user.value.id,
+                name: phenoName,
+                description: currentPhenotype.value.description || '',
+                source: currentPhenotype.value.source || '',
                 project_id: projects.currentProject.value.id,
-                name: newName.trim(),
             })
             .select()
             .single()
 
         if (error) {
             if (error.code === "23505") {
-                return emitError("Name exists", `"${newName}" already exists in this project.`)
+                return emitError("Name exists", `"${phenoName}" already exists in this project.`)
             }
             return emitError("Save failed", error.message)
         }
@@ -114,8 +130,10 @@ export function usePhenotypes() {
     // ----------------------------
     // DELETE
     // ----------------------------
-    async function deletePhenotype(id) {
-        if (!id) return
+    async function deletePhenotype() {
+        if (!currentPhenotype.value) return
+
+        const id = currentPhenotype.value.id;
 
         const { error } = await supabase
             .from("phenotypes")
@@ -126,9 +144,7 @@ export function usePhenotypes() {
 
         phenotypes.value = phenotypes.value.filter(p => p.id !== id);
 
-        if (currentPhenotype.value?.id === id) {
-            currentPhenotype.value = {name: ''};
-        }
+        currentPhenotype.value = {id: '', user_id: '', name: '', description: '', project_id: '', source: ''};
 
         emitSuccess("Deleted", "Phenotype removed.")
     }
@@ -146,6 +162,8 @@ export function usePhenotypes() {
         nameError,
 
         // functions
+        phenotypeExists,
+        loadPhenotype,
         fetchPhenotypes,
         savePhenotype,
         deletePhenotype,

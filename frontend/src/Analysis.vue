@@ -30,7 +30,6 @@ const {
 
   <!-- Diagnostics Section -->
   <Card class="diagnostic-card-wrapper">
-    <template #title>Diagnostics</template>
     <template #content>
       <div class="diagnostic-card-panel">
 
@@ -73,6 +72,7 @@ const {
                 icon="pi pi-play"
                 label="Run analysis"
                 @click="runAnalysis"
+                severity="contrast"
             />
           </div>
         </Panel>

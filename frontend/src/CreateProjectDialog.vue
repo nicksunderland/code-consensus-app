@@ -1,10 +1,10 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
 import { useProjects } from '@/composables/useProjects.js'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
+import FloatLabel from "primevue/floatlabel";
 
 // --- use composable ---
 const {
@@ -19,31 +19,32 @@ const {
 
 <template>
   <Dialog
-    header="Create Project"
+    :header="isEditing ? 'Edit Project' : 'Create Project'"
     v-model:visible="showProjectDialog"
     modal
     :closable="true"
     appendTo="self"
     style="width: 500px"
   >
-    <div class="label-input-div">
-      <label class="project-dialog-label">Project Name</label>
-      <InputText v-model="projectForm.name" placeholder="Enter project name"/>
-    </div>
+    <FloatLabel variant="on" class="label-input-div">
+      <InputText v-model="projectForm.name" inputId="project_name" fluid/>
+      <label for="project_name">Project Name</label>
+    </FloatLabel>
+
+    <FloatLabel variant="on" class="label-input-div">
+      <Textarea v-model="projectForm.description" rows="5" inputId="project_desc" fluid/>
+      <label for="project_desc">Description</label>
+    </FloatLabel>
 
     <div class="label-input-div">
-      <label class="project-dialog-label">Description</label>
-      <Textarea v-model="projectForm.description" rows="5" placeholder="Enter description"/>
-    </div>
-
-    <div class="label-input-div">
-      <label class="project-dialog-label">Invite Members (emails)</label>
+      <label class="project-dialog-label">Members</label>
       <div v-for="(email, index) in projectForm.member_emails" :key="index" class="email-row">
         <InputText
             v-model="projectForm.member_emails[index]"
             :disabled="projectForm.member_ids[index] === projectForm.owner"
             placeholder="user@example.com"
             class="email-input"
+            fluid
         />
         <Button
             icon="pi pi-times"
@@ -67,6 +68,7 @@ const {
               projectForm.member_ids.push(null);
               projectForm.member_roles.push('member')
           "
+          style="margin-top: 0.5rem"
       />
     </div>
 
@@ -96,13 +98,15 @@ const {
   flex-direction: column;
   display: flex;
   margin-bottom: 1rem;
+  margin-top: 0.5rem;
 }
 
 .email-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.1rem;
 }
 
 .email-input {
@@ -114,7 +118,7 @@ const {
   width: 100% !important;
   display: flex !important;
   justify-content: center !important;
-  gap: 0.5rem;
+  gap: 1rem;
   margin-top: 1rem;
 }
 </style>

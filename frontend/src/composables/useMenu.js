@@ -18,7 +18,8 @@ export function useMenu() {
         const projectItems = !user
         ? [{ label: 'Please login', icon: 'pi pi-exclamation-triangle' }]
         : projects.projects.value.length === 0
-          ? [{ label: 'No projects found', icon: 'pi pi-info-circle', disabled: true }]
+          ? [ { label: 'Create Project', icon: 'pi pi-plus', command: () => projects.openCreateDialog() },
+              { label: 'No projects found', icon: 'pi pi-info-circle', disabled: true        }]
           : [
               { label: 'Create Project', icon: 'pi pi-plus', command: () => projects.openCreateDialog() },
               { label: 'Edit Project', icon: 'pi pi-pencil', command: () => projects.openEditDialog() },

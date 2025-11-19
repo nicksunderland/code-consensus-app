@@ -19,7 +19,9 @@ export function useAuth() {
 
     // Helper functions to manipulate dialog
     function openLogin() {
+        console.log("currentDialog.value =", currentDialog.value);
         currentDialog.value = 'login'
+        console.log("currentDialog.value =", currentDialog.value);
     }
 
     function openSignup() {

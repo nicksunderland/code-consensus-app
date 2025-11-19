@@ -2,6 +2,11 @@
 import { ref, computed, watch } from 'vue';
 import Menubar from 'primevue/menubar';
 import Divider from 'primevue/divider';
+import Accordion from 'primevue/accordion';
+import AccordionPanel from 'primevue/accordionpanel';
+import AccordionHeader from 'primevue/accordionheader';
+import AccordionContent from 'primevue/accordioncontent';
+import Card from "primevue/card";
 import 'primeicons/primeicons.css';
 import AuthDialogs from '@/AuthDialogs.vue';
 import CreateProjectDialog from "@/CreateProjectDialog.vue";
@@ -17,6 +22,7 @@ import { useMenu } from '@/composables/useMenu.js';
 import { useTreeSearch } from "@/composables/useTreeSearch.js";
 import {useAnalysis} from "@/composables/useAnalysis.js";
 import {useNotifications} from "@/composables/useNotifications.js";
+import PhenotypeDefinition from "@/PhenotypeDefinition.vue";
 
 // set up toast - need to load the .js globals with toast function
 // however have to do in a component file (.vue). Load first so that
@@ -29,6 +35,11 @@ notifications.setErrorHandler((summary, error) => {
 notifications.setSuccessHandler((summary, detail) => {
     toast.add({ severity: 'success', summary, detail })
 })
+
+//testing delete later
+const phenotypes = usePhenotypes()
+const projects = useProjects()
+//
 
 // THINGS FROM COMPOSABLES ---
 const { user } = useAuth()
@@ -72,17 +83,46 @@ watch(
       </div>
       <Divider layout="vertical" />
     </template>
-    <template #end>
-
-    </template>
-
   </Menubar>
   <!-- Main content -->
   <div class="app-container">
-    <TreeSearch/>
-    <SelectedCodes/>
-    <Analysis/>
+    <Accordion :value="['0']" multiple>
+      <AccordionPanel value="0">
+          <AccordionHeader>Define</AccordionHeader>
+          <AccordionContent>
+            <PhenotypeDefinition/>
+          </AccordionContent>
+      </AccordionPanel>
+      <AccordionPanel value="1">
+          <AccordionHeader>Search</AccordionHeader>
+          <AccordionContent>
+<!--            <TreeSearch/>-->
+          </AccordionContent>
+      </AccordionPanel>
+      <AccordionPanel value="2">
+          <AccordionHeader>Review</AccordionHeader>
+          <AccordionContent>
+            <SelectedCodes/>
+          </AccordionContent>
+      </AccordionPanel>
+      <AccordionPanel value="3">
+          <AccordionHeader>Diagnostics</AccordionHeader>
+          <AccordionContent>
+            <Analysis/>
+          </AccordionContent>
+      </AccordionPanel>
+      <AccordionPanel value="4" disabled>
+          <AccordionHeader>Download</AccordionHeader>
+          <AccordionContent>
+            <p>Coming soon</p>
+          </AccordionContent>
+      </AccordionPanel>
+    </Accordion>
+
+
+
   </div>
+
 </template>
 
 <style scoped>

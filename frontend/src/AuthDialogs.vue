@@ -2,10 +2,10 @@
 import { ref, computed } from 'vue'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
+import FloatLabel from 'primevue/floatlabel'
 import Password from 'primevue/password'
 import Button from 'primevue/button'
 import Divider from 'primevue/divider'
-import { useToast } from "primevue/usetoast";
 import { useAuth } from '@/composables/useAuth.js'
 
 // --- composables ---
@@ -36,15 +36,15 @@ const magicForm = ref({
 
 // --- Computed dialog visibility ---
 const loginVisible = computed({
-  get: () => currentDialog === 'login',
+  get: () => currentDialog.value === 'login',
   set: val => { if (!val) closeDialog() }
 })
 const magicVisible = computed({
-  get: () => currentDialog === 'magic',
+  get: () => currentDialog.value === 'magic',
   set: val => { if (!val) closeDialog() }
 })
 const signupVisible = computed({
-  get: () => currentDialog === 'signup',
+  get: () => currentDialog.value === 'signup',
   set: val => { if (!val) closeDialog() }
 })
 
@@ -85,12 +85,16 @@ const magicLogin = async () => {
   <Dialog v-model:visible="loginVisible" header="Login" modal :style="{ width: '450px', maxWidth: '90%' }">
     <div class="p-fluid flex flex-col gap-3">
       <div class="field">
-        <label>Email</label>
-        <InputText v-model="loginForm.email" class="w-full"/>
+        <FloatLabel variant="on">
+          <InputText v-model="loginForm.email" inputId="email_login" fluid/>
+          <label for="email_login">Email</label>
+        </FloatLabel>
       </div>
       <div class="field">
-        <label>Password</label>
-        <Password v-model="loginForm.password" toggleMask :style="{ width: '100%' }" :inputStyle="{ width: '100%' }" />
+        <FloatLabel variant="on">
+          <Password v-model="loginForm.password" inputId="password_login" toggleMask showClear fluid :feedback="false"/>
+          <label for="password_login">Password</label>
+        </FloatLabel>
       </div>
 
       <div class="dialog-footer flex justify-center w-full gap-2">
@@ -112,8 +116,10 @@ const magicLogin = async () => {
   <Dialog v-model:visible="magicVisible" header="Magic Link" modal :style="{ width: '450px', maxWidth: '90%' }">
     <div class="p-fluid flex flex-col gap-3">
       <div class="field">
-        <label>Email</label>
-        <InputText v-model="magicForm.email" />
+        <FloatLabel variant="on">
+          <InputText v-model="magicForm.email" inputId="email_magic" fluid/>
+          <label for="email_magic">Email</label>
+        </FloatLabel>
       </div>
       <div class="dialog-footer flex justify-center w-full gap-2">
         <Button label="Cancel" class="p-button-text" @click="closeDialog" />
@@ -133,12 +139,16 @@ const magicLogin = async () => {
   <Dialog v-model:visible="signupVisible" header="Sign Up" modal :style="{ width: '450px', maxWidth: '90%' }">
     <div class="p-fluid flex flex-col gap-3">
       <div class="field">
-        <label>Email</label>
-        <InputText v-model="signupForm.email" />
+        <FloatLabel variant="on">
+          <InputText v-model="signupForm.email" inputId="email" fluid/>
+          <label for="email">Email</label>
+        </FloatLabel>
       </div>
       <div class="field">
-        <label>Password</label>
-        <Password v-model="signupForm.password" toggleMask :style="{ width: '100%' }" :inputStyle="{ width: '100%' }" />
+        <FloatLabel variant="on">
+          <Password v-model="signupForm.password" inputId="password" toggleMask showClear fluid :feedback="false"/>
+          <label for="password">Password</label>
+        </FloatLabel>
       </div>
 
       <div class="dialog-footer flex justify-center w-full gap-2">
@@ -146,6 +156,7 @@ const magicLogin = async () => {
         <Button label="Create Account" @click="signup" />
       </div>
     </div>
+
   </Dialog>
 </template>
 
@@ -153,14 +164,16 @@ const magicLogin = async () => {
 .field {
   display: flex;
   flex-direction: column;
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+  margin-top: 0.5rem;
 }
 
 .dialog-footer {
   width: 100% !important;
   display: flex !important;
   justify-content: center !important;
-  gap: 0.5rem;
+  gap: 1rem;
   margin-top: 1rem;
 }
 </style>
