@@ -2,6 +2,7 @@ import { ref, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase'
 import { useAuth } from '@/composables/useAuth.js'
 import { useNotifications } from './useNotifications'
+import { usePhenotypes } from "@/composables/usePhenotypes.js";
 
 // globals - these are set once in memory
 /**
@@ -66,26 +67,29 @@ export function useProjects() {
     }
 
     function closeDialog() {
+        isEditing.value = false
         showProjectDialog.value = false
     }
 
     // ---------------------------------------
     // CREATE / UPDATE PROJECT
     // ---------------------------------------
-    async function saveProject() {
+    async function saveProject(update = false) {
+        if (!auth.user.value) return null
         if (!projectForm.name.trim()) {
             emitError('Missing Project Name', 'Please enter a name.')
             return null
         }
-        if (!auth.user.value) return null
+
 
         try {
+            let data
             // ---------------------------------------------------
             // UPDATE EXISTING PROJECT
             // ---------------------------------------------------
-            if (isEditing.value && currentProject.value) {
+            if (update && currentProject.value) {
 
-                const { data, error } = await supabase
+                const res = await supabase
                     .from('projects')
                     .update({
                         name: projectForm.name,
@@ -95,10 +99,11 @@ export function useProjects() {
                     .select()
                     .single()
 
-                if (error) return emitError('Failed to update project', error)
+                if (res.error) return emitError('Failed to update project', res.error)
+                data = res.data
 
                 // --- delete removed members ---
-                const currentMemberIds = currentProject.value.members.map(m => m.user_id)
+                const currentMemberIds = currentProject.value.project_members.map(m => m.user_id)
                 const formMemberIds = projectForm.member_ids
                 const toDelete = currentMemberIds.filter(id => !formMemberIds.includes(id))
 
@@ -111,6 +116,23 @@ export function useProjects() {
 
                     if (delError) return emitError('Failed to remove members', delError)
                 }
+
+                // Fetch updated members from DB so project_members is always present
+                const { data: fullProject } = await supabase
+                    .from('projects')
+                    .select(`
+                        id,
+                        name,
+                        description,
+                        owner,
+                        project_members(user_id, role, email:user_profiles(email))
+                    `)
+                    .eq('id', currentProject.value.id)
+                    .single()
+
+                if (!fullProject) return emitError('Failed to fetch updated project', {})
+
+                data = fullProject
 
                 // --- update local state ---
                 const index = projects.value.findIndex(p => p.id === data.id)
@@ -125,7 +147,7 @@ export function useProjects() {
             // ---------------------------------------------------
             // CREATE NEW PROJECT
             // ---------------------------------------------------
-            const { data, error } = await supabase
+            const res = await supabase
                 .from('projects')
                 .insert({
                     name: projectForm.name,
@@ -135,13 +157,14 @@ export function useProjects() {
                 .select()
                 .single()
 
-            if (error) {
-                if (error.code === '23505') {
+            if (res.error) {
+                if (res.error.code === '23505') {
                     return emitError('Project Name Taken', 'Please choose a different project name.')
                 }
-                return emitError('Failed to create project', error)
+                return emitError('Failed to create project', res.error)
             }
 
+            data = res.data
             const projectId = data.id
 
             // --- Add owner as member ---
@@ -157,7 +180,6 @@ export function useProjects() {
                 .filter(e => e !== '' && e !== auth.user.value.email)
 
             if (trimmedEmails.length) {
-
                 const { data: profiles, error: profileErr } = await supabase
                     .from('user_profiles')
                     .select('user_id, email')
@@ -167,25 +189,34 @@ export function useProjects() {
                     return emitError('Failed to fetch user IDs for emails', profileErr)
                 }
 
-                if (!profiles.length) {
-                    return emitError(
-                        'No valid member emails',
-                        'No user accounts matched the emails you entered.'
-                    )
-                }
+                if (!profiles.length) return emitError('No valid member emails', 'No user accounts matched the emails you entered.')
 
                 const insertData = profiles.map(profile => ({
                     project_id: projectId,
                     user_id: profile.user_id,
                     role: 'member'
                 }))
-
                 await supabase.from('project_members').insert(insertData)
             }
 
+            // Fetch full project with members after creation
+            const { data: fullProject } = await supabase
+                .from('projects')
+                .select(`
+                    id,
+                    name,
+                    description,
+                    owner,
+                    project_members(user_id, role, email:user_profiles(email))
+                `)
+                .eq('id', projectId)
+                .single()
+
+            if (!fullProject) return emitError('Failed to fetch new project', {})
+
             // --- update client-side state NOW ---
-            projects.value.push(data)
-            currentProject.value = data
+            currentProject.value = fullProject
+            projects.value.push(fullProject)
 
             emitSuccess("Project Created", `Project "${data.name}" created.`)
             closeDialog()
@@ -229,6 +260,7 @@ export function useProjects() {
             currentProject.value = data[0]
             await fetchMembers(data[0].id)
         }
+
     }
 
     async function fetchMembers() {
@@ -277,6 +309,43 @@ export function useProjects() {
         currentProject.value = null
     }
 
+    async function deleteProject() {
+        if (!currentProject.value) return;
+        if (currentProject.value.owner !== auth.user.value.id) {
+            emitError('Unauthorized', 'You must be the project owner to delete this project.');
+            return;
+        }
+
+        const projectId = currentProject.value.id;
+        const projectName = currentProject.value.name;
+        console.log("Deleting project:", currentProject.value);
+
+        try {
+            // Delete project from DB (cascades to project_members if FK has ON DELETE CASCADE)
+            const { error } = await supabase
+                .from('projects')
+                .delete()
+                .eq('id', projectId);
+
+            if (error) {
+                emitError('Failed to delete project', error.message);
+                return;
+            }
+
+            // Clear local state
+            projects.value = projects.value.filter(p => p.id !== projectId); // remove just the deleted project
+            if (currentProject.value?.id === projectId) {
+                currentProject.value = projects.value[0] || null; // set first project or null
+            }
+
+            emitSuccess('Project Deleted', `Project "${projectName}" deleted.`);
+            closeDialog();                   // close modal if open
+
+        } catch (err) {
+            emitError('Unexpected Error', err.message);
+        }
+    }
+
     return {
         // state
         projects,
@@ -293,6 +362,7 @@ export function useProjects() {
         fetchProjects,
         fetchMembers,
         selectProject,
-        emptyProjects
+        emptyProjects,
+        deleteProject
     }
 }

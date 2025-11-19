@@ -5,15 +5,47 @@ import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import Button from 'primevue/button'
 import FloatLabel from "primevue/floatlabel";
+import {ref} from "vue";
+import {useConfirm} from "primevue/useconfirm";
 
 // --- use composable ---
 const {
+  currentProject,
   showProjectDialog,
   isEditing,
   projectForm,
   closeDialog,
-  saveProject
+  saveProject,
+  deleteProject
 } = useProjects()
+
+const confirm = useConfirm();
+const isVisibleDeleteProjectCheck = ref(false);
+const deleteProjectCheck = (event) => {
+  if (!currentProject.value) return
+  const projectId = currentProject.value.id;
+
+  confirm.require({
+    target: event.currentTarget,
+    message: `Are you sure you want to delete the entire project ${currentProject.value.name}? This action cannot be undone.`,
+    header: `Deleting Entire Project ${currentProject.value.name}!`,
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Delete',
+    acceptIcon: 'pi pi-trash',
+    acceptClass: 'p-button-danger',
+    onShow: () => {
+      isVisibleDeleteProjectCheck.value = true;
+    },
+    onHide: () => {
+      isVisibleDeleteProjectCheck.value = false;
+    },
+    accept: () => {
+      deleteProject();
+    },
+    reject: () => {}
+  });
+
+}
 
 </script>
 
@@ -81,7 +113,14 @@ const {
       <Button
         :label="isEditing ? 'Update' : 'Create'"
         icon="pi pi-check"
-        @click="saveProject()"
+        @click="isEditing ? saveProject(true) : saveProject(false)"
+      />
+      <Button
+          v-if="isEditing"
+          @click="deleteProjectCheck"
+          icon="pi pi-trash"
+          label="Delete"
+          severity="danger"
       />
     </div>
   </Dialog>

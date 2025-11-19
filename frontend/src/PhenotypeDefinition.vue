@@ -28,18 +28,21 @@ const {
 const confirm = useConfirm();
 const isVisibleSaveCheck = ref(false);
 const isVisibleRevertCheck = ref(false);
-const saveCheck = (event) => {
-  console.log('Save check triggered, id:', currentPhenotype.value.id);
-  if (!currentPhenotype.value?.id || !phenotypeExists(currentPhenotype.value.id)) {
-      // Either no ID (new phenotype) or not found in existing list
+const isVisibleDeleteCheck = ref(false);
+const saveCheck = async (event) => {
+
+  const id = currentPhenotype.value?.id?.trim() || null;
+  const exists = await phenotypeExists(id);
+  console.log("Phenotype exists:", exists);
+  if (!exists) {
       savePhenotype();
       return;
   }
 
   confirm.require({
     target: event.currentTarget,
-    message: 'Are you sure you want to overwrite the existing phenotype? This action cannot be undone.',
-    header: 'Overwriting Existing Phenotype!',
+    message: `Are you sure you want to overwrite the phenotype ${currentPhenotype.value.name}? This action cannot be undone.`,
+    header: `Overwriting ${currentPhenotype.value.name} Phenotype!`,
     icon: 'pi pi-exclamation-triangle',
     acceptLabel: 'Overwrite',
     acceptIcon: 'pi pi-save',
@@ -51,7 +54,7 @@ const saveCheck = (event) => {
       isVisibleSaveCheck.value = false;
     },
     accept: () => {
-      savePhenotype();
+      savePhenotype( true);
     },
     reject: () => {}
   });
@@ -66,8 +69,8 @@ const revertCheck = (event) => {
 
   confirm.require({
     target: event.currentTarget,
-    message: 'Are you sure you want to overwrite the current data with the saved phenotype? This action cannot be undone.',
-    header: 'Overwriting Current Phenotype!',
+    message: `Are you sure you want to overwrite the the ${currentPhenotype.value.name} phenotype? This action cannot be undone.`,
+    header: `Overwriting ${currentPhenotype.value.name} Phenotype!`,
     icon: 'pi pi-exclamation-triangle',
     acceptLabel: 'Overwrite',
     acceptIcon: 'pi pi-save',
@@ -80,6 +83,34 @@ const revertCheck = (event) => {
     },
     accept: () => {
       loadPhenotype(currentPhenotype.value.id);
+    },
+    reject: () => {}
+  });
+
+}
+
+const deleteCheck = (event) => {
+  if (!currentPhenotype.value?.id || !phenotypeExists(currentPhenotype.value.id)) {
+    // nothing to revert to
+      return;
+  }
+
+  confirm.require({
+    target: event.currentTarget,
+    message: `Are you sure you want to delete the phenotype ${currentPhenotype.value.name}? This action cannot be undone.`,
+    header: `Deleting Phenotype ${currentPhenotype.value.name}!`,
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Delete',
+    acceptIcon: 'pi pi-trash',
+    acceptClass: 'p-button-danger',
+    onShow: () => {
+      isVisibleDeleteCheck.value = true;
+    },
+    onHide: () => {
+      isVisibleDeleteCheck.value = false;
+    },
+    accept: () => {
+      deletePhenotype();
     },
     reject: () => {}
   });
@@ -147,12 +178,12 @@ const revertCheck = (event) => {
               />
               <ConfirmPopup></ConfirmPopup>
               <Button
-                @click="deletePhenotype"
+                @click="deleteCheck"
                 fluid
                 icon="pi pi-trash"
                 label="Delete"
                 severity="danger"
-                :disabled="!currentPhenotype?.id"
+                :disabled="!currentPhenotype?.name"
               />
           </div>
 

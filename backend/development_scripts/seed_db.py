@@ -9,6 +9,12 @@ def create_icd10_table():
     Create the ICD-10 codes table in Supabase.
     Run this SQL in your Supabase SQL editor:
 
+    -- Enable UUID generation
+    create extension if not exists "uuid-ossp";
+
+    ------------------------------------------------------------
+    -- CODE SYSTEMS
+    ------------------------------------------------------------
     CREATE TABLE IF NOT EXISTS code_systems (
         id SERIAL PRIMARY KEY,
         name VARCHAR(50) NOT NULL UNIQUE,
@@ -17,6 +23,9 @@ def create_icd10_table():
         url TEXT NOT NULL
     );
 
+    ------------------------------------------------------------
+    -- CODES
+    ------------------------------------------------------------
     CREATE TABLE IF NOT EXISTS codes (
       id BIGSERIAL PRIMARY KEY,
       system_id INT NOT NULL REFERENCES code_systems(id) ON DELETE RESTRICT,
@@ -25,10 +34,16 @@ def create_icd10_table():
       parent_id BIGINT REFERENCES codes(id) ON DELETE SET NULL,
       materialized_path TEXT,
       is_leaf BOOLEAN NOT NULL DEFAULT FALSE,
+      is_selectable BOOLEAN NOT NULL DEFAULT TRUE,
       CONSTRAINT code_system_unique UNIQUE (system_id, code)
     );
 
+
+    ------------------------------------------------------------
+    -- INDEXES
+    ------------------------------------------------------------
     CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
     -- 1. SEARCH INDEXES (codes)
 
     -- 1. For fast lazy-loading (GET /nodes/{id}/children)
@@ -58,14 +73,209 @@ def create_icd10_table():
     CREATE INDEX IF NOT EXISTS idx_codes_trgm_code
     ON codes USING gin (code gin_trgm_ops);
 
-    -- 6. Co-occurence table
+
+    ------------------------------------------------------------
+    -- CO-OCCURENCE MEASURES
+    ------------------------------------------------------------
     CREATE TABLE IF NOT EXISTS code_cooccurrence (
-    id BIGSERIAL PRIMARY KEY,
-    code_i BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
-    code_j BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
-    jaccard NUMERIC(5,3) DEFAULT 0,  -- e.g., 0.123
-    lift NUMERIC(5,3) DEFAULT 0,
-    CONSTRAINT code_pair_unique UNIQUE (code_i, code_j)
+        id BIGSERIAL PRIMARY KEY,
+        code_i BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+        code_j BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+        jaccard NUMERIC(5,3) DEFAULT 0,  -- e.g., 0.123
+        lift NUMERIC(5,3) DEFAULT 0,
+        CONSTRAINT code_pair_unique UNIQUE (code_i, code_j)
+    );
+
+    ------------------------------------------------------------
+    -- PROJECTS
+    ------------------------------------------------------------
+    create table projects (
+      id uuid primary key default uuid_generate_v4(),
+      owner uuid not null references auth.users(id) on delete cascade,
+      name text not null,
+      description text,
+      created_at timestamptz default now()
+    );
+
+    ------------------------------------------------------------
+    -- PROJECT MEMBERS
+    ------------------------------------------------------------
+    create table project_members (
+      project_id uuid references projects(id) on delete cascade,
+      user_id uuid references auth.users(id) on delete cascade,
+      role text default 'member', -- 'owner' or 'member'
+      added_at timestamptz default now(),
+      primary key (project_id, user_id)
+    );
+
+    ------------------------------------------------------------
+    -- PHENOTYPES (private or project-based)
+    ------------------------------------------------------------
+    create table phenotypes (
+      id uuid primary key default uuid_generate_v4(),
+      user_id uuid not null references auth.users(id) on delete cascade,
+      project_id uuid references projects(id) on delete cascade,
+      name text not null,
+      description text,
+      source text,
+      created_at timestamptz default now(),
+      updated_at timestamptz default now()
+    );
+
+    ------------------------------------------------------------
+    -- UNIQUE NAME RULES
+    ------------------------------------------------------------
+    -- Private phenotypes (project_id IS NULL)
+    create unique index unique_private_phenotype_name
+    on phenotypes (user_id, lower(trim(name)))
+    where project_id is null;
+
+    -- Shared phenotypes (project_id IS NOT NULL)
+    create unique index unique_project_phenotype_name
+    on phenotypes (project_id, lower(trim(name)))
+    where project_id is not null;
+
+    -- Unique project names per user
+    create unique index unique_project_name_per_owner
+    on projects (owner, lower(trim(name)));
+
+    ------------------------------------------------------------
+    -- ENABLE RLS
+    ------------------------------------------------------------
+    alter table projects enable row level security;
+    alter table project_members enable row level security;
+    alter table phenotypes enable row level security;
+
+    ------------------------------------------------------------
+    -- PROJECTS RLS
+    ------------------------------------------------------------
+    -- Members can see only their own membership
+    CREATE POLICY "Members see their own membership"
+    ON project_members
+    FOR SELECT
+    USING (user_id = auth.uid());
+
+    -- Owners can see all members in their projects
+    CREATE POLICY "Owners see all members"
+    ON project_members
+    FOR SELECT
+    USING (project_id IN (SELECT id FROM projects WHERE owner = auth.uid()));
+
+    ------------------------------------------------------------
+    -- PROJECT MEMBERS RLS
+    ------------------------------------------------------------
+    -- Members can see their memberships & others within their projects
+    CREATE POLICY "Members can see all memberships in their projects"
+    ON project_members
+    FOR SELECT
+    USING (
+        project_id IN (
+            SELECT id
+            FROM projects
+            WHERE id = project_members.project_id
+              AND (
+                  owner = auth.uid()
+                  OR EXISTS (
+                      SELECT 1
+                      FROM project_members pm
+                      WHERE pm.project_id = projects.id
+                        AND pm.user_id = auth.uid()
+                  )
+              )
+        )
+    );
+
+    -- Owners can add members (role='member') to their projects
+    create policy "Owner can insert themselves as owner"
+    on project_members
+    for insert
+    with check (
+      project_id IN (select id from projects where owner = auth.uid()) AND
+      (role = 'member' OR (role = 'owner' AND user_id = auth.uid()))
+    );
+
+
+    -- Prevent updates by anyone
+    create policy "No arbitrary updates"
+    on project_members
+    for update
+    using (false);
+
+    -- Prevent deletes by anyone
+    create policy "No arbitrary deletes"
+    on project_members
+    for delete
+    using (false);
+
+    ------------------------------------------------------------
+    -- PHENOTYPES RLS
+    ------------------------------------------------------------
+    -- 1. SELECT: users can see their own private phenotypes or any project phenotypes they belong to
+    create policy "Read own or project phenotypes"
+    on phenotypes
+    for select
+    using (
+      user_id = auth.uid()
+      OR project_id IN (
+        select project_id from project_members where user_id = auth.uid()
+      )
+    );
+
+    -- 2. INSERT: users can insert private phenotypes or project phenotypes if they are members
+    create policy "Insert own or project phenotypes"
+    on phenotypes
+    for insert
+    with check (
+      user_id = auth.uid()
+      AND (
+        project_id IS NULL
+        OR project_id IN (
+          select project_id from project_members where user_id = auth.uid()
+        )
+      )
+    );
+
+    -- 3. UPDATE: same rules as select/insert
+    create policy "Update own or project phenotypes"
+    on phenotypes
+    for update
+    using (
+      user_id = auth.uid()
+      OR project_id IN (
+        select project_id from project_members where user_id = auth.uid()
+      )
+    )
+    with check (
+      user_id = auth.uid()
+      OR project_id IN (
+        select project_id from project_members where user_id = auth.uid()
+      )
+    );
+
+    -- 4. DELETE: same rules
+    create policy "Delete own or project phenotypes"
+    on phenotypes
+    for delete
+    using (
+      user_id = auth.uid()
+      OR project_id IN (
+        select project_id from project_members where user_id = auth.uid()
+      )
+    );
+
+
+    ------------------------------------------------------------
+    -- USER PROFILES
+    ------------------------------------------------------------
+    create table public.user_profiles (
+      user_id uuid not null,
+      email text not null,
+      created_at timestamp with time zone null default now(),
+      constraint user_profiles_pkey primary key (user_id),
+      constraint user_profiles_email_key unique (email),
+      constraint user_profiles_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
+    ) TABLESPACE pg_default;
+
 );
     """
     print("Please create the table using the SQL in the function docstring")

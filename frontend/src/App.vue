@@ -96,7 +96,7 @@ watch(
       <AccordionPanel value="1">
           <AccordionHeader>Search</AccordionHeader>
           <AccordionContent>
-<!--            <TreeSearch/>-->
+            <TreeSearch/>
           </AccordionContent>
       </AccordionPanel>
       <AccordionPanel value="2">

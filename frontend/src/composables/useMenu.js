@@ -27,7 +27,7 @@ export function useMenu() {
                 label: p.name,
                 icon: projects.currentProject.value?.id === p.id ? 'pi pi-folder-open' : 'pi pi-folder',
                 command: () => {
-                    console.log(p)
+                    phenotypes.emptyPhenotypes()
                     projects.selectProject(p)
                     phenotypes.fetchPhenotypes()
                 }

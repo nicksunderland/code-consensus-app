@@ -7,7 +7,8 @@ import { useNotifications } from './useNotifications'
 
 // globals - these are set once in memory
 const phenotypes = ref([]);          // list for active project
-const currentPhenotype = ref({id: '', user_id: '', name: '', description: '', project_id: '', source: '', isFresh: true});  // loaded full phenotype
+const emptyPhenotype = {id: '', user_id: '', name: '', description: '', project_id: '', source: ''};
+const currentPhenotype = ref(emptyPhenotype);
 
 // export
 export function usePhenotypes() {
@@ -31,25 +32,29 @@ export function usePhenotypes() {
     // check if an ID exists in the phenotypes DB table
     async function phenotypeExists(id) {
         if (!auth.user.value) return;
+
+        if (!id || typeof id !== "string" || id.trim() === "") {
+            return false;
+        }
+
         const { data, error } = await supabase
             .from('phenotypes')
             .select('id')
             .eq('id', id)
-            .single()
+            .maybeSingle()
 
         if (error) {
-            if (error.code === 'PGRST116') {
-                return false; // not found
-            }
-            emitError("Error checking phenotype", error.message)
+            emitError("Error checking phenotype", error.message);
             return false;
         }
 
-        return data !== null;
+        return !!data;
     }
 
     // Load phenotypes for the active project only
-    async function fetchPhenotypes(projectId) {
+    async function fetchPhenotypes() {
+        const projectId = projects.currentProject.value.id
+        console.log("fetchPhenotypes for projectId:", projectId)
         if (!auth.user.value) return;
         if (!projectId) return;
         console.log("projectID:", projectId)
@@ -90,18 +95,54 @@ export function usePhenotypes() {
     }
 
   // ----------------------------
-  // CREATE NEW PHENOTYPE
+  // CREATE OR UPDATE PHENOTYPE
   // ----------------------------
-    async function savePhenotype() {
+    async function savePhenotype(update = false) {
         if (!auth.user.value) return
 
-        const phenoName = currentPhenotype.value.name?.trim()
+        const pheno = currentPhenotype.value;
+        const phenoName = typeof pheno.name === "string"
+            ? pheno.name.trim()
+            : String(pheno.name || "").trim();
+
+        console.log("savePhenotype:", pheno, "update:", update)
 
         if (!phenoName) {
             flashNameError()
             return emitError("Missing name", "Please provide a name.")
         }
 
+        // ----------------------------
+        // UPDATE EXISTING PHENOTYPE
+        // ----------------------------
+        if (update === true && pheno.id) {
+            const {data, error} = await supabase
+                .from("phenotypes")
+                .update({
+                    name: phenoName,
+                    description: pheno.description || "",
+                    source: pheno.source || "",
+                    project_id: projects.currentProject.value.id
+                })
+                .eq("id", pheno.id)
+                .select()
+                .single();
+
+            if (error) {
+                return emitError("Update failed", error.message);
+            }
+
+            // Replace existing phenotype in local list
+            const idx = phenotypes.value.findIndex(p => p.name === pheno.name);
+            if (idx !== -1) phenotypes.value[idx] = data;
+
+            emitSuccess("Updated", `Phenotype "${data.name}" updated.`);
+            return data;
+        }
+
+        // ----------------------------
+        // CREATE NEW PHENOTYPE
+        // ----------------------------
         const { data, error } = await supabase
             .from("phenotypes")
             .insert({
@@ -113,6 +154,8 @@ export function usePhenotypes() {
             })
             .select()
             .single()
+
+        console.log("savePhenotype data:", data, "error:", error)
 
         if (error) {
             if (error.code === "23505") {
@@ -151,7 +194,7 @@ export function usePhenotypes() {
 
     function emptyPhenotypes() {
         phenotypes.value = []
-        currentPhenotype.value = {name: ''}
+        currentPhenotype.value = emptyPhenotype
     }
 
     return {
