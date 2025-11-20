@@ -7,39 +7,10 @@ import { useNotifications } from './useNotifications'
 // ---------------------------------------------
 const nodes = ref([])
 const selectedNodeKeys = ref({})
+const searchNodeKeys = ref({})
 const expandedNodeKeys = ref({})
 const errorMessage = ref(null)
 const autoSelect = ref(false)
-const selectedNodes = computed(() => {
-    const flattenedNodes = (nodeList) => {
-        const result = [];
-
-        const traverse = (nodes) => {
-            if (!Array.isArray(nodes)) return;
-
-            nodes.forEach((node) => {
-                result.push(node);
-
-                if (Array.isArray(node.children) && node.children.length) {
-                    traverse(node.children);
-                }
-            });
-        };
-
-        traverse(nodeList);
-        return result;
-    };
-    const flat = flattenedNodes(nodes.value);
-    return flat
-        .filter(node => selectedNodeKeys.value[node.key?.toString()])
-        .map(node => ({
-            key: node.key,
-            leaf: node.leaf,
-            selectable: node.selectable,
-            ...node.data,
-            found_in_search: node.data.found_in_search ? 'Yes' : 'No',
-        }));
-});
 const searchInOptions = [
     { label: 'Codes',       value: 'code'        },
     { label: 'Description', value: 'description' },
@@ -184,7 +155,11 @@ export function useTreeSearch() {
         // 🔹 Reset all existing found_in_search flags before applying new search results
         clearSearchFlags(nodes.value);
 
+        // get the ids of the search results
         const searchResultIds = new Set(results.map(r => r.key));
+        searchResultIds.forEach(id => {
+            searchNodeKeys.value[id] = true;   // or { found: true }
+        });
 
         results.forEach((result, resultIndex) => {
 
@@ -249,10 +224,10 @@ export function useTreeSearch() {
         // tree
         nodes,
         selectedNodeKeys,
+        searchNodeKeys,
         expandedNodeKeys,
         errorMessage,
         onNodeExpand,
-        selectedNodes,
         resetTree,
 
         // search

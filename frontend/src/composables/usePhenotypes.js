@@ -53,9 +53,14 @@ export function usePhenotypes() {
 
     // Load phenotypes for the active project only
     async function fetchPhenotypes() {
+        if (!auth.user.value) return;
+        if (!projects.currentProject.value) {
+            console.log("No active project found. Clearing global phenotypes list.");
+            phenotypes.value = [];
+            return;
+        }
         const projectId = projects.currentProject.value.id
         console.log("fetchPhenotypes for projectId:", projectId)
-        if (!auth.user.value) return;
         if (!projectId) return;
         console.log("projectID:", projectId)
 

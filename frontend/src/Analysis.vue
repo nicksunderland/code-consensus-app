@@ -1,5 +1,5 @@
 <script setup>
-import { toRefs } from "vue"
+import { ref, watch } from "vue"
 import apexchart from "vue3-apexcharts"
 import Card from 'primevue/card';
 import Panel from 'primevue/panel';
@@ -9,20 +9,20 @@ import Button from 'primevue/button';
 import Select from 'primevue/select';
 import 'primeicons/primeicons.css';
 import { useAnalysis } from "@/composables/useAnalysis.js";
+import {useCodeSelection} from "@/composables/useCodeSelection.js";
 
 // Destructure composable to get auto-unwrapped refs
 const {
-  sliderRange,
-  sliderMin,
-  sliderMax,
-  sliderStep,
   selectedMetric,
+  sliderRange,   // The actual handle values [min, max]
+  sliderBounds,  // The track limits { min, max, step }
   chartOptions,
   series,
   metricOptions,
   runAnalysis,
   metricTooltip
 } = useAnalysis();
+
 
 </script>
 
@@ -58,9 +58,9 @@ const {
               <Slider
                 v-model="sliderRange"
                 range
-                :min="sliderMin"
-                :max="sliderMax"
-                :step="sliderStep"
+                :min="sliderBounds.min"
+                :max="sliderBounds.max"
+                :step="sliderBounds.step"
                 id="threshold"
               />
             </div>

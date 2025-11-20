@@ -276,6 +276,30 @@ def create_icd10_table():
       constraint user_profiles_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
     ) TABLESPACE pg_default;
 
+    ------------------------------------------------------------
+    -- USER CODE SELECTIONS
+    ------------------------------------------------------------
+    CREATE TABLE IF NOT EXISTS user_code_selections (
+        -- 1. ID COLUMNS
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        phenotype_id UUID NOT NULL REFERENCES phenotypes(id) ON DELETE CASCADE,
+        code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+
+        -- 2. DATA COLUMNS
+        found_in_search BOOLEAN NOT NULL DEFAULT TRUE,
+        is_selected BOOLEAN NOT NULL DEFAULT FALSE,   -- Matches Checkbox
+        comment TEXT NULL,                             -- Matches Line Edit
+
+        -- 3. COMPOSITE PRIMARY KEY
+        -- This ensures one record per user per code context
+        PRIMARY KEY (project_id, phenotype_id, code_id, user_id)
+    );
+
+    -- Optional: Index for faster retrieval of a specific user's work on a phenotype
+    CREATE INDEX IF NOT EXISTS idx_selections_user_phenotype
+    ON user_code_selections (user_id, phenotype_id);
+
 );
     """
     print("Please create the table using the SQL in the function docstring")

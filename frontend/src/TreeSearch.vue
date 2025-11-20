@@ -173,5 +173,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-
+    padding-top: 0.15rem;    /* Optional: Compress vertical space further */
+    padding-bottom: 0.15rem; /* Optional: Compress vertical space further */
 </style>

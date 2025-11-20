@@ -11,7 +11,7 @@ import 'primeicons/primeicons.css';
 import AuthDialogs from '@/AuthDialogs.vue';
 import CreateProjectDialog from "@/CreateProjectDialog.vue";
 import TreeSearch from "@/TreeSearch.vue";
-import SelectedCodes from "@/SelectedCodes.vue";
+import SelectedCodes from "@/CodeSelection.vue";
 import Analysis from "@/Analysis.vue";
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
@@ -23,6 +23,7 @@ import { useTreeSearch } from "@/composables/useTreeSearch.js";
 import {useAnalysis} from "@/composables/useAnalysis.js";
 import {useNotifications} from "@/composables/useNotifications.js";
 import PhenotypeDefinition from "@/PhenotypeDefinition.vue";
+import {useCodeSelection} from "@/composables/useCodeSelection.js";
 
 // set up toast - need to load the .js globals with toast function
 // however have to do in a component file (.vue). Load first so that
@@ -39,6 +40,8 @@ notifications.setSuccessHandler((summary, detail) => {
 //testing delete later
 const phenotypes = usePhenotypes()
 const projects = useProjects()
+const tree = useTreeSearch()
+const codeSelection = useCodeSelection()
 //
 
 // THINGS FROM COMPOSABLES ---
@@ -46,6 +49,8 @@ const { user } = useAuth()
 const { menuItems } = useMenu()
 const { fetchProjects, emptyProjects } = useProjects()
 const { fetchPhenotypes, emptyPhenotypes } = usePhenotypes()
+const { isAnalysisActive } = useAnalysis();
+const activeTabs = ref(['0', '1']);
 
 // --- WATCH USER LOGIN ---
 watch(
@@ -64,6 +69,14 @@ watch(
   },
   { immediate: true } // also runs immediately if user is already logged in
 )
+// --- WATCH TABS ---
+watch(activeTabs, (newTabs) => {
+  console.log("newTabs:", newTabs);
+  const currentTabs = newTabs || [];
+  const isDiagnosticsOpen = currentTabs.some(t => String(t) === '3');
+  isAnalysisActive.value = isDiagnosticsOpen;
+  console.log("Diagnostics Panel Open:", isDiagnosticsOpen);
+}, { immediate: true, deep: true });
 
 
 </script>
@@ -86,7 +99,7 @@ watch(
   </Menubar>
   <!-- Main content -->
   <div class="app-container">
-    <Accordion :value="['0']" multiple>
+    <Accordion v-model:value="activeTabs" multiple>
       <AccordionPanel value="0">
           <AccordionHeader>Define</AccordionHeader>
           <AccordionContent>

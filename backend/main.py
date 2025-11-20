@@ -409,6 +409,51 @@ async def get_cooccurrence(request: CooccurrenceRequest):
             raise HTTPException(status_code=500, detail="Failed to fetch co-occurring codes.")
 
 
+class BoundsRequest(BaseModel):
+    code_ids: List[int]
+
+
+@app.post("/api/get-metric-bounds")
+async def get_metric_bounds(request: BoundsRequest):
+    """
+    Calculates the absolute MIN and MAX values for the selected metric
+    across all co-occurrences involving the provided code_ids.
+    """
+    if not request.code_ids:
+        return {
+            "jaccard": {"min": 0.0, "max": 1.0},
+            "lift": {"min": 0.0, "max": 10.0}
+        }
+
+    # 1. SQL: Fetches bounds for BOTH metrics in one go
+    sql = text("""
+            SELECT 
+                MIN(jaccard) as min_j, MAX(jaccard) as max_j,
+                MIN(lift) as min_l, MAX(lift) as max_l
+            FROM code_cooccurrence
+            WHERE code_i = ANY(:code_ids :: bigint[]) 
+               OR code_j = ANY(:code_ids :: bigint[])
+    """)
+
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(sql, {"code_ids": request.code_ids})
+            row = result.fetchone()
+            min_j = float(row.min_j) if row.min_j is not None else 0.0
+            max_j = float(row.max_j) if row.max_j is not None else 1.0
+            min_l = float(row.min_l) if row.min_l is not None else 0.0
+            max_l = float(row.max_l) if row.max_l is not None else 10.0
+
+            return {
+                "jaccard": {"min": min_j, "max": max_j},
+                "lift": {"min": min_l, "max": max_l}
+            }
+
+        except Exception as e:
+            print(f"Error fetching metric bounds: {e}")
+            raise HTTPException(status_code=500, detail="Failed to calculate bounds")
+
+
 if __name__ == "__main__":
     import uvicorn
     PORT = int(os.environ.get("PORT", 8080))  # Use Fly.io port
