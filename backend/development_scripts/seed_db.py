@@ -276,31 +276,64 @@ def create_icd10_table():
       constraint user_profiles_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
     ) TABLESPACE pg_default;
 
+
     ------------------------------------------------------------
-    -- USER CODE SELECTIONS
+    -- USER CODE SELECTIONS (Unified Table)
     ------------------------------------------------------------
     CREATE TABLE IF NOT EXISTS user_code_selections (
-        -- 1. ID COLUMNS
+        -- 1. CONTEXT (Composite Key Parts)
         project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         phenotype_id UUID NOT NULL REFERENCES phenotypes(id) ON DELETE CASCADE,
         code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
         user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
 
-        -- 2. DATA COLUMNS
-        found_in_search BOOLEAN NOT NULL DEFAULT TRUE,
-        is_selected BOOLEAN NOT NULL DEFAULT FALSE,   -- Matches Checkbox
-        comment TEXT NULL,                             -- Matches Line Edit
+        -- 2. DATA (The User's Input)
+        found_in_search BOOLEAN NOT NULL DEFAULT TRUE, -- Did this user find it?
+        is_selected BOOLEAN NOT NULL DEFAULT FALSE,    -- Did they check the box?
+        comment TEXT NULL,                             -- Did they type a reason?
 
-        -- 3. COMPOSITE PRIMARY KEY
-        -- This ensures one record per user per code context
+        -- 4. PRIMARY KEY
+        -- This guarantees a user can only have ONE record per code per phenotype
         PRIMARY KEY (project_id, phenotype_id, code_id, user_id)
     );
 
-    -- Optional: Index for faster retrieval of a specific user's work on a phenotype
-    CREATE INDEX IF NOT EXISTS idx_selections_user_phenotype
+    -- INDEXES
+    -- 1. Fast lookup: "Show me everything User X did for Phenotype Y" (Your Main View)
+    CREATE INDEX IF NOT EXISTS idx_ucs_user_phenotype
     ON user_code_selections (user_id, phenotype_id);
 
-);
+    -- 2. Consensus lookup: "Show me ALL users' votes for Phenotype Y" (For your Dashboard)
+    CREATE INDEX IF NOT EXISTS idx_ucs_phenotype_code
+    ON user_code_selections (phenotype_id, code_id);
+
+    );
+
+    ------------------------------------------------------------
+    -- USER CODE SELECTIONS (Unified Table)
+    ------------------------------------------------------------
+    CREATE TABLE IF NOT EXISTS phenotype_consensus (
+        -- 1. CONTEXT
+        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        phenotype_id UUID NOT NULL REFERENCES phenotypes(id) ON DELETE CASCADE,
+
+        -- 2. CODE DETAILS
+        code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+        -- Added per request (useful for fast exports without joining tables)
+        system_id INT NOT NULL REFERENCES code_systems(id),
+
+        -- 3. EXPLANATION
+        comments TEXT, -- The consensus rationale
+
+        -- 4. AUDIT TRAIL
+        finalized_at TIMESTAMPTZ DEFAULT now(),
+
+        -- 5. PRIMARY KEY
+        PRIMARY KEY (project_id, phenotype_id, code_id)
+    );
+
+    -- Index for fast export/display
+    CREATE INDEX IF NOT EXISTS idx_consensus_phenotype
+    ON phenotype_consensus (phenotype_id);
     """
     print("Please create the table using the SQL in the function docstring")
 

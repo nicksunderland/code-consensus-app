@@ -115,6 +115,7 @@ onMounted(async () => {
             :disabled="searchInputs.length === 1"
             @click="removeSearchTerm(index)"
             aria-label="Remove search input"
+            style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
           />
         </span>
         <span v-tooltip.top="{ value: 'Add search term', showDelay: 300 }">
@@ -126,6 +127,7 @@ onMounted(async () => {
             size="small"
             @click="addSearchTerm"
             aria-label="Add search input"
+            style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
           />
         </span>
       </div>
@@ -135,21 +137,23 @@ onMounted(async () => {
       <Button
         label="Run Search"
         icon="pi pi-search"
-        severity="contrast"
+        severity="info"
         @click="runSearch"
+        style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
       />
       <span v-tooltip.top="{value: 'Auto-select search results', showDelay: 300}">
         <ToggleSwitch
             v-model="autoSelect"
-            class="auto-select-search"
+            class="toggleswitch-info"
         />
       </span>
       <ConfirmDialog></ConfirmDialog>
       <Button
           icon="pi pi-trash"
           label="Deselect All"
-          severity="danger"
+          severity="secondary"
           @click="removeAllCodes"
+          style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
       />
 
     </div>
@@ -175,4 +179,5 @@ onMounted(async () => {
 <style scoped>
     padding-top: 0.15rem;    /* Optional: Compress vertical space further */
     padding-bottom: 0.15rem; /* Optional: Compress vertical space further */
+
 </style>

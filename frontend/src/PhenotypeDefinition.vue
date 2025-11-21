@@ -165,9 +165,10 @@ const deleteCheck = (event) => {
             <Button
                 label="Save"
                 icon="pi pi-save"
-                severity="contrast"
+                severity="info"
                 fluid
                 @click="saveCheck"
+                style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
               />
             <Button
                 label="Revert"
@@ -175,6 +176,7 @@ const deleteCheck = (event) => {
                 icon ="pi pi-refresh"
                 fluid
                 @click="revertCheck"
+                style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
               />
               <ConfirmPopup></ConfirmPopup>
               <Button
@@ -182,8 +184,9 @@ const deleteCheck = (event) => {
                 fluid
                 icon="pi pi-trash"
                 label="Delete"
-                severity="danger"
+                severity="secondary"
                 :disabled="!currentPhenotype?.name"
+                style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
               />
           </div>
 
@@ -193,6 +196,8 @@ const deleteCheck = (event) => {
   </Card>
 
 </template>
+
+
 
 <style scoped>
 
@@ -209,5 +214,21 @@ const deleteCheck = (event) => {
     gap: 0.8rem;
 
   }
+
+  /* 1. THE BOX (Background & Border when checked) */
+:deep(.toggleswitch-info.p-checkbox-checked .p-checkbox-box) {
+    background-color: #0EA5E9 !important; /* Cyan Background */
+    border-color: #0EA5E9 !important;     /* Cyan Border */
+}
+
+/* 2. THE ICON (The Checkmark itself) */
+:deep(.checkbox-info.p-checkbox-checked .p-checkbox-icon) {
+    color: #ffffff !important;            /* Force Checkmark to be White */
+}
+
+/* 3. HOVER STATE (Optional: Make it slightly darker when hovering) */
+:deep(.checkbox-info:not(.p-disabled):hover .p-checkbox-box) {
+    border-color: #0EA5E9 !important;
+}
 
 </style>

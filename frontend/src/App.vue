@@ -73,7 +73,7 @@ watch(
 watch(activeTabs, (newTabs) => {
   console.log("newTabs:", newTabs);
   const currentTabs = newTabs || [];
-  const isDiagnosticsOpen = currentTabs.some(t => String(t) === '3');
+  const isDiagnosticsOpen = currentTabs.some(t => String(t) === '2');
   isAnalysisActive.value = isDiagnosticsOpen;
   console.log("Diagnostics Panel Open:", isDiagnosticsOpen);
 }, { immediate: true, deep: true });
@@ -113,15 +113,15 @@ watch(activeTabs, (newTabs) => {
           </AccordionContent>
       </AccordionPanel>
       <AccordionPanel value="2">
-          <AccordionHeader>Review</AccordionHeader>
-          <AccordionContent>
-            <SelectedCodes/>
-          </AccordionContent>
-      </AccordionPanel>
-      <AccordionPanel value="3">
           <AccordionHeader>Diagnostics</AccordionHeader>
           <AccordionContent>
             <Analysis/>
+          </AccordionContent>
+      </AccordionPanel>
+      <AccordionPanel value="3">
+          <AccordionHeader>Review</AccordionHeader>
+          <AccordionContent>
+            <SelectedCodes/>
           </AccordionContent>
       </AccordionPanel>
       <AccordionPanel value="4" disabled>
