@@ -13,6 +13,7 @@ import CreateProjectDialog from "@/CreateProjectDialog.vue";
 import TreeSearch from "@/TreeSearch.vue";
 import SelectedCodes from "@/CodeSelection.vue";
 import Analysis from "@/Analysis.vue";
+import Download from "@/Download.vue";
 import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { useAuth } from '@/composables/useAuth.js'
@@ -24,6 +25,7 @@ import {useAnalysis} from "@/composables/useAnalysis.js";
 import {useNotifications} from "@/composables/useNotifications.js";
 import PhenotypeDefinition from "@/PhenotypeDefinition.vue";
 import {useCodeSelection} from "@/composables/useCodeSelection.js";
+import {useDownload} from "@/composables/useDownload.js";
 
 // set up toast - need to load the .js globals with toast function
 // however have to do in a component file (.vue). Load first so that
@@ -41,6 +43,7 @@ notifications.setSuccessHandler((summary, detail) => {
 const phenotypes = usePhenotypes()
 const projects = useProjects()
 const tree = useTreeSearch()
+const selection = useCodeSelection()
 //
 
 // THINGS FROM COMPOSABLES ---
@@ -49,6 +52,7 @@ const { menuItems } = useMenu()
 const { fetchProjects, emptyProjects } = useProjects()
 const { fetchPhenotypes, emptyPhenotypes } = usePhenotypes()
 const { isAnalysisActive } = useAnalysis();
+const { isDownloadActive } = useDownload();
 const { clearTreeState } = useTreeSearch();
 const { clearSelectionState } = useCodeSelection();
 
@@ -85,6 +89,7 @@ const activeTabs = ref(['0', '1']);
 watch(activeTabs, (newTabs) => {
   const currentTabs = newTabs || [];
   isAnalysisActive.value = currentTabs.includes(TAB_INDEXES.DIAGNOSTICS);
+  isDownloadActive.value = currentTabs.includes(TAB_INDEXES.DOWNLOAD);
 }, { immediate: true, deep: true });
 
 </script>
@@ -132,10 +137,10 @@ watch(activeTabs, (newTabs) => {
             <SelectedCodes/>
           </AccordionContent>
       </AccordionPanel>
-      <AccordionPanel value="4" disabled>
+      <AccordionPanel value="4">
           <AccordionHeader>Download</AccordionHeader>
           <AccordionContent>
-            <p>Coming soon</p>
+            <Download/>
           </AccordionContent>
       </AccordionPanel>
     </Accordion>

@@ -9,331 +9,354 @@ def create_icd10_table():
     Create the ICD-10 codes table in Supabase.
     Run this SQL in your Supabase SQL editor:
 
-    -- Enable UUID generation
-    create extension if not exists "uuid-ossp";
+-- Enable UUID generation
+create extension if not exists "uuid-ossp";
 
-    ------------------------------------------------------------
-    -- CODE SYSTEMS
-    ------------------------------------------------------------
-    CREATE TABLE IF NOT EXISTS code_systems (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(50) NOT NULL UNIQUE,
-        description TEXT NOT NULL,
-        version VARCHAR(20) NOT NULL,
-        url TEXT NOT NULL
-    );
+------------------------------------------------------------
+-- CODE SYSTEMS
+------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS code_systems (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    version VARCHAR(20) NOT NULL,
+    url TEXT NOT NULL
+);
 
-    ------------------------------------------------------------
-    -- CODES
-    ------------------------------------------------------------
-    CREATE TABLE IF NOT EXISTS codes (
-      id BIGSERIAL PRIMARY KEY,
-      system_id INT NOT NULL REFERENCES code_systems(id) ON DELETE RESTRICT,
-      code VARCHAR(255) NOT NULL,
-      description TEXT NOT NULL,
-      parent_id BIGINT REFERENCES codes(id) ON DELETE SET NULL,
-      materialized_path TEXT,
-      is_leaf BOOLEAN NOT NULL DEFAULT FALSE,
-      is_selectable BOOLEAN NOT NULL DEFAULT TRUE,
-      CONSTRAINT code_system_unique UNIQUE (system_id, code)
-    );
-
-
-    ------------------------------------------------------------
-    -- INDEXES
-    ------------------------------------------------------------
-    CREATE EXTENSION IF NOT EXISTS pg_trgm;
-
-    -- 1. SEARCH INDEXES (codes)
-
-    -- 1. For fast lazy-loading (GET /nodes/{id}/children)
-    CREATE INDEX IF NOT EXISTS idx_codes_parent_id
-    ON codes (parent_id);
-
-    -- 2. For fast full-tree search (e.g., finding all descendants)
-    -- This index is optimized for text prefix queries (LIKE '/1/2/%')
-    CREATE INDEX IF NOT EXISTS idx_codes_materialized_path
-    ON codes (materialized_path text_pattern_ops); -- 'text_pattern_ops' is a PostgreSQL optimization
-
-    -- 3. For finding root nodes quickly (optional, but helpful)
-    -- You can combine this with the parent_id index, but this is explicit
-    CREATE INDEX IF NOT EXISTS idx_codes_is_root
-    ON codes (parent_id)
-    WHERE parent_id IS NULL;
-
-    -- 4. For finding leaf nodes quickly (e.g., for search filters)
-    CREATE INDEX IF NOT EXISTS idx_codes_is_leaf
-    ON codes (is_leaf)
-    WHERE is_leaf = TRUE;
-
-    -- 5. For regex matching
-    CREATE INDEX IF NOT EXISTS idx_codes_trgm_desc
-    ON codes USING gin (description gin_trgm_ops);
-
-    CREATE INDEX IF NOT EXISTS idx_codes_trgm_code
-    ON codes USING gin (code gin_trgm_ops);
+------------------------------------------------------------
+-- CODES
+------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS codes (
+  id BIGSERIAL PRIMARY KEY,
+  system_id INT NOT NULL REFERENCES code_systems(id) ON DELETE RESTRICT,
+  code VARCHAR(255) NOT NULL,
+  description TEXT NOT NULL,
+  parent_id BIGINT REFERENCES codes(id) ON DELETE SET NULL,
+  materialized_path TEXT,
+  is_leaf BOOLEAN NOT NULL DEFAULT FALSE,
+  is_selectable BOOLEAN NOT NULL DEFAULT TRUE,
+  CONSTRAINT code_system_unique UNIQUE (system_id, code)
+);
 
 
-    ------------------------------------------------------------
-    -- CO-OCCURENCE MEASURES
-    ------------------------------------------------------------
-    CREATE TABLE IF NOT EXISTS code_cooccurrence (
-        id BIGSERIAL PRIMARY KEY,
-        code_i BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
-        code_j BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
-        jaccard NUMERIC(5,3) DEFAULT 0,  -- e.g., 0.123
-        lift NUMERIC(5,3) DEFAULT 0,
-        CONSTRAINT code_pair_unique UNIQUE (code_i, code_j)
-    );
+------------------------------------------------------------
+-- INDEXES
+------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
-    ------------------------------------------------------------
-    -- PROJECTS
-    ------------------------------------------------------------
-    create table projects (
-      id uuid primary key default uuid_generate_v4(),
-      owner uuid not null references auth.users(id) on delete cascade,
-      name text not null,
-      description text,
-      created_at timestamptz default now()
-    );
+-- 1. SEARCH INDEXES (codes)
 
-    ------------------------------------------------------------
-    -- PROJECT MEMBERS
-    ------------------------------------------------------------
-    create table project_members (
-      project_id uuid references projects(id) on delete cascade,
-      user_id uuid references auth.users(id) on delete cascade,
-      role text default 'member', -- 'owner' or 'member'
-      added_at timestamptz default now(),
-      primary key (project_id, user_id)
-    );
+-- 1. For fast lazy-loading (GET /nodes/{id}/children)
+CREATE INDEX IF NOT EXISTS idx_codes_parent_id
+ON codes (parent_id);
 
-    ------------------------------------------------------------
-    -- PHENOTYPES (private or project-based)
-    ------------------------------------------------------------
-    create table phenotypes (
-      id uuid primary key default uuid_generate_v4(),
-      user_id uuid not null references auth.users(id) on delete cascade,
-      project_id uuid references projects(id) on delete cascade,
-      name text not null,
-      description text,
-      source text,
-      created_at timestamptz default now(),
-      updated_at timestamptz default now()
-    );
+-- 2. For fast full-tree search (e.g., finding all descendants)
+-- This index is optimized for text prefix queries (LIKE '/1/2/%')
+CREATE INDEX IF NOT EXISTS idx_codes_materialized_path
+ON codes (materialized_path text_pattern_ops); -- 'text_pattern_ops' is a PostgreSQL optimization
 
-    ------------------------------------------------------------
-    -- UNIQUE NAME RULES
-    ------------------------------------------------------------
-    -- Private phenotypes (project_id IS NULL)
-    create unique index unique_private_phenotype_name
-    on phenotypes (user_id, lower(trim(name)))
-    where project_id is null;
+-- 3. For finding root nodes quickly (optional, but helpful)
+-- You can combine this with the parent_id index, but this is explicit
+CREATE INDEX IF NOT EXISTS idx_codes_is_root
+ON codes (parent_id)
+WHERE parent_id IS NULL;
 
-    -- Shared phenotypes (project_id IS NOT NULL)
-    create unique index unique_project_phenotype_name
-    on phenotypes (project_id, lower(trim(name)))
-    where project_id is not null;
+-- 4. For finding leaf nodes quickly (e.g., for search filters)
+CREATE INDEX IF NOT EXISTS idx_codes_is_leaf
+ON codes (is_leaf)
+WHERE is_leaf = TRUE;
 
-    -- Unique project names per user
-    create unique index unique_project_name_per_owner
-    on projects (owner, lower(trim(name)));
+-- 5. For regex matching
+CREATE INDEX IF NOT EXISTS idx_codes_trgm_desc
+ON codes USING gin (description gin_trgm_ops);
 
-    ------------------------------------------------------------
-    -- ENABLE RLS
-    ------------------------------------------------------------
-    alter table projects enable row level security;
-    alter table project_members enable row level security;
-    alter table phenotypes enable row level security;
-
-    ------------------------------------------------------------
-    -- PROJECTS RLS
-    ------------------------------------------------------------
-    -- Members can see only their own membership
-    CREATE POLICY "Members see their own membership"
-    ON project_members
-    FOR SELECT
-    USING (user_id = auth.uid());
-
-    -- Owners can see all members in their projects
-    CREATE POLICY "Owners see all members"
-    ON project_members
-    FOR SELECT
-    USING (project_id IN (SELECT id FROM projects WHERE owner = auth.uid()));
-
-    ------------------------------------------------------------
-    -- PROJECT MEMBERS RLS
-    ------------------------------------------------------------
-    -- Members can see their memberships & others within their projects
-    CREATE POLICY "Members can see all memberships in their projects"
-    ON project_members
-    FOR SELECT
-    USING (
-        project_id IN (
-            SELECT id
-            FROM projects
-            WHERE id = project_members.project_id
-              AND (
-                  owner = auth.uid()
-                  OR EXISTS (
-                      SELECT 1
-                      FROM project_members pm
-                      WHERE pm.project_id = projects.id
-                        AND pm.user_id = auth.uid()
-                  )
-              )
-        )
-    );
-
-    -- Owners can add members (role='member') to their projects
-    create policy "Owner can insert themselves as owner"
-    on project_members
-    for insert
-    with check (
-      project_id IN (select id from projects where owner = auth.uid()) AND
-      (role = 'member' OR (role = 'owner' AND user_id = auth.uid()))
-    );
+CREATE INDEX IF NOT EXISTS idx_codes_trgm_code
+ON codes USING gin (code gin_trgm_ops);
 
 
-    -- Prevent updates by anyone
-    create policy "No arbitrary updates"
-    on project_members
-    for update
-    using (false);
-
-    -- Prevent deletes by anyone
-    create policy "No arbitrary deletes"
-    on project_members
-    for delete
-    using (false);
-
-    ------------------------------------------------------------
-    -- PHENOTYPES RLS
-    ------------------------------------------------------------
-    -- 1. SELECT: users can see their own private phenotypes or any project phenotypes they belong to
-    create policy "Read own or project phenotypes"
-    on phenotypes
-    for select
-    using (
-      user_id = auth.uid()
-      OR project_id IN (
-        select project_id from project_members where user_id = auth.uid()
-      )
-    );
-
-    -- 2. INSERT: users can insert private phenotypes or project phenotypes if they are members
-    create policy "Insert own or project phenotypes"
-    on phenotypes
-    for insert
-    with check (
-      user_id = auth.uid()
-      AND (
-        project_id IS NULL
-        OR project_id IN (
-          select project_id from project_members where user_id = auth.uid()
-        )
-      )
-    );
-
-    -- 3. UPDATE: same rules as select/insert
-    create policy "Update own or project phenotypes"
-    on phenotypes
-    for update
-    using (
-      user_id = auth.uid()
-      OR project_id IN (
-        select project_id from project_members where user_id = auth.uid()
-      )
-    )
-    with check (
-      user_id = auth.uid()
-      OR project_id IN (
-        select project_id from project_members where user_id = auth.uid()
-      )
-    );
-
-    -- 4. DELETE: same rules
-    create policy "Delete own or project phenotypes"
-    on phenotypes
-    for delete
-    using (
-      user_id = auth.uid()
-      OR project_id IN (
-        select project_id from project_members where user_id = auth.uid()
-      )
-    );
+------------------------------------------------------------
+-- CO-OCCURENCE MEASURES
+------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS code_cooccurrence (
+    id BIGSERIAL PRIMARY KEY,
+    code_i BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+    code_j BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+    jaccard NUMERIC(5,3) DEFAULT 0,  -- e.g., 0.123
+    lift NUMERIC(5,3) DEFAULT 0,
+    CONSTRAINT code_pair_unique UNIQUE (code_i, code_j)
+);
 
 
-    ------------------------------------------------------------
-    -- USER PROFILES
-    ------------------------------------------------------------
-    create table public.user_profiles (
-      user_id uuid not null,
-      email text not null,
-      created_at timestamp with time zone null default now(),
-      constraint user_profiles_pkey primary key (user_id),
-      constraint user_profiles_email_key unique (email),
-      constraint user_profiles_user_id_fkey foreign KEY (user_id) references auth.users (id) on delete CASCADE
-    ) TABLESPACE pg_default;
+------------------------------------------------------------
+-- 2. USER PROFILES
+-- (Links to auth.users for structure, but no RLS attached)
+------------------------------------------------------------
+CREATE TABLE public.user_profiles (
+  user_id UUID NOT NULL,
+  email TEXT NOT NULL,
+  first_name TEXT,
+  last_name TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+
+  CONSTRAINT user_profiles_pkey PRIMARY KEY (user_id),
+  CONSTRAINT user_profiles_email_key UNIQUE (email),
+  CONSTRAINT user_profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users (id) ON DELETE CASCADE
+);
+
+-- TRIGGER: Automatically create profile on signup
+-- (Required for Foreign Keys to work, even without RLS)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.user_profiles (user_id, email)
+  VALUES (new.id, new.email);
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
 
-    ------------------------------------------------------------
-    -- USER CODE SELECTIONS (Unified Table)
-    ------------------------------------------------------------
-    CREATE TABLE IF NOT EXISTS user_code_selections (
-        -- 1. CONTEXT (Composite Key Parts)
-        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        phenotype_id UUID NOT NULL REFERENCES phenotypes(id) ON DELETE CASCADE,
-        code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
-        user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+------------------------------------------------------------
+-- 3. PROJECTS
+------------------------------------------------------------
+CREATE TABLE public.projects (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  owner UUID NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
 
-        -- 2. DATA (The User's Input)
-        found_in_search BOOLEAN NOT NULL DEFAULT TRUE, -- Did this user find it?
-        is_selected BOOLEAN NOT NULL DEFAULT FALSE,    -- Did they check the box?
-        comment TEXT NULL,                             -- Did they type a reason?
+-- INDEX: Unique Project Name per Owner
+CREATE UNIQUE INDEX unique_project_name_per_owner
+ON public.projects (owner, lower(trim(name)));
 
-        -- 4. PRIMARY KEY
-        -- This guarantees a user can only have ONE record per code per phenotype
-        PRIMARY KEY (project_id, phenotype_id, code_id, user_id)
-    );
 
-    -- INDEXES
-    -- 1. Fast lookup: "Show me everything User X did for Phenotype Y" (Your Main View)
-    CREATE INDEX IF NOT EXISTS idx_ucs_user_phenotype
-    ON user_code_selections (user_id, phenotype_id);
+------------------------------------------------------------
+-- 4. PROJECT MEMBERS
+-- (Added 'id' column to prevent JS Ambiguity Errors)
+------------------------------------------------------------
+CREATE TABLE public.project_members (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
+  role TEXT DEFAULT 'member',
+  added_at TIMESTAMPTZ DEFAULT now(),
 
-    -- 2. Consensus lookup: "Show me ALL users' votes for Phenotype Y" (For your Dashboard)
-    CREATE INDEX IF NOT EXISTS idx_ucs_phenotype_code
-    ON user_code_selections (phenotype_id, code_id);
+  -- Logic Constraint: User can only be in a project once
+  CONSTRAINT unique_project_membership UNIQUE (project_id, user_id)
+);
 
-    );
 
-    ------------------------------------------------------------
-    -- USER CODE SELECTIONS (Unified Table)
-    ------------------------------------------------------------
-    CREATE TABLE IF NOT EXISTS phenotype_consensus (
-        -- 1. CONTEXT
-        project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        phenotype_id UUID NOT NULL REFERENCES phenotypes(id) ON DELETE CASCADE,
+------------------------------------------------------------
+-- 5. PHENOTYPES
+------------------------------------------------------------
+CREATE TABLE public.phenotypes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  source TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
 
-        -- 2. CODE DETAILS
-        code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
-        -- Added per request (useful for fast exports without joining tables)
-        system_id INT NOT NULL REFERENCES code_systems(id),
+CREATE UNIQUE INDEX unique_project_phenotype_name
+ON public.phenotypes (project_id, lower(trim(name)));
 
-        -- 3. EXPLANATION
-        comments TEXT, -- The consensus rationale
 
-        -- 4. AUDIT TRAIL
-        finalized_at TIMESTAMPTZ DEFAULT now(),
+------------------------------------------------------------
+-- PHENOTYPE SEARCH STRATEGY
+------------------------------------------------------------
+CREATE TABLE public.phenotype_search_terms (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    phenotype_id UUID NOT NULL REFERENCES public.phenotypes(id) ON DELETE CASCADE,
 
-        -- 5. PRIMARY KEY
-        PRIMARY KEY (project_id, phenotype_id, code_id)
-    );
+    -- The Search Inputs
+    term TEXT NOT NULL,
+    is_regex BOOLEAN DEFAULT FALSE,
+    is_ai_enhanced BOOLEAN DEFAULT FALSE, -- Future proofing
 
-    -- Index for fast export/display
-    CREATE INDEX IF NOT EXISTS idx_consensus_phenotype
-    ON phenotype_consensus (phenotype_id);
+    -- Arrays are perfect here
+    target_columns TEXT[] DEFAULT '{code,description}', -- e.g. ["code", "description"]
+    system_ids INT[] DEFAULT '{}',                      -- e.g. [1, 2]
+
+    -- To keep them in the order the user added them (1st, 2nd, 3rd box)
+    row_order INT NOT NULL DEFAULT 0
+);
+
+-- Index for fast loading
+CREATE INDEX idx_search_terms_phenotype ON public.phenotype_search_terms(phenotype_id);
+
+
+------------------------------------------------------------
+-- 6. USER CODE SELECTIONS
+-- (Removed 'project_id' column to support Private Phenotypes)
+------------------------------------------------------------
+CREATE TABLE public.user_code_selections (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    phenotype_id UUID NOT NULL REFERENCES public.phenotypes(id) ON DELETE CASCADE,
+    code_id BIGINT NOT NULL REFERENCES public.codes(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.user_profiles(user_id) ON DELETE CASCADE,
+    found_in_search BOOLEAN NOT NULL DEFAULT TRUE,
+    is_selected BOOLEAN NOT NULL DEFAULT FALSE,
+    comment TEXT NULL,
+
+    -- Constraint: One selection per user per code per phenotype
+    CONSTRAINT unique_user_selection UNIQUE (phenotype_id, code_id, user_id)
+);
+
+-- Performance Indexes
+CREATE INDEX idx_ucs_user_phenotype ON public.user_code_selections (user_id, phenotype_id);
+CREATE INDEX idx_ucs_phenotype_code ON public.user_code_selections (phenotype_id, code_id);
+
+
+------------------------------------------------------------
+-- 7. PHENOTYPE CONSENSUS
+------------------------------------------------------------
+CREATE TABLE public.phenotype_consensus (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    phenotype_id UUID NOT NULL REFERENCES public.phenotypes(id) ON DELETE CASCADE,
+    code_id BIGINT NOT NULL REFERENCES public.codes(id) ON DELETE CASCADE,
+    comments TEXT,
+    finalized_at TIMESTAMPTZ DEFAULT now(),
+    CONSTRAINT unique_consensus UNIQUE (phenotype_id, code_id)
+);
+
+
+
+
+
+
+-- ------------------------------------------------------------
+-- -- ENABLE RLS
+-- ------------------------------------------------------------
+-- alter table projects enable row level security;
+-- alter table project_members enable row level security;
+-- alter table phenotypes enable row level security;
+
+-- ------------------------------------------------------------
+-- -- PROJECTS RLS
+-- ------------------------------------------------------------
+-- -- Members can see only their own membership
+-- CREATE POLICY "Members see their own membership"
+-- ON project_members
+-- FOR SELECT
+-- USING (user_id = auth.uid());
+
+-- -- Owners can see all members in their projects
+-- CREATE POLICY "Owners see all members"
+-- ON project_members
+-- FOR SELECT
+-- USING (project_id IN (SELECT id FROM projects WHERE owner = auth.uid()));
+
+-- ------------------------------------------------------------
+-- -- PROJECT MEMBERS RLS
+-- ------------------------------------------------------------
+-- -- Members can see their memberships & others within their projects
+-- CREATE POLICY "Members can see all memberships in their projects"
+-- ON project_members
+-- FOR SELECT
+-- USING (
+--     project_id IN (
+--         SELECT id
+--         FROM projects
+--         WHERE id = project_members.project_id
+--           AND (
+--               owner = auth.uid()
+--               OR EXISTS (
+--                   SELECT 1
+--                   FROM project_members pm
+--                   WHERE pm.project_id = projects.id
+--                     AND pm.user_id = auth.uid()
+--               )
+--           )
+--     )
+-- );
+
+-- -- Owners can add members (role='member') to their projects
+-- create policy "Owner can insert themselves as owner"
+-- on project_members
+-- for insert
+-- with check (
+--   project_id IN (select id from projects where owner = auth.uid()) AND
+--   (role = 'member' OR (role = 'owner' AND user_id = auth.uid()))
+-- );
+
+
+-- -- Prevent updates by anyone
+-- create policy "No arbitrary updates"
+-- on project_members
+-- for update
+-- using (false);
+
+-- -- Prevent deletes by anyone
+-- create policy "No arbitrary deletes"
+-- on project_members
+-- for delete
+-- using (false);
+
+-- ------------------------------------------------------------
+-- -- PHENOTYPES RLS
+-- ------------------------------------------------------------
+-- -- 1. SELECT: users can see their own private phenotypes or any project phenotypes they belong to
+-- create policy "Read own or project phenotypes"
+-- on phenotypes
+-- for select
+-- using (
+--   user_id = auth.uid()
+--   OR project_id IN (
+--     select project_id from project_members where user_id = auth.uid()
+--   )
+-- );
+
+-- -- 2. INSERT: users can insert private phenotypes or project phenotypes if they are members
+-- create policy "Insert own or project phenotypes"
+-- on phenotypes
+-- for insert
+-- with check (
+--   user_id = auth.uid()
+--   AND (
+--     project_id IS NULL
+--     OR project_id IN (
+--       select project_id from project_members where user_id = auth.uid()
+--     )
+--   )
+-- );
+
+-- -- 3. UPDATE: same rules as select/insert
+-- create policy "Update own or project phenotypes"
+-- on phenotypes
+-- for update
+-- using (
+--   user_id = auth.uid()
+--   OR project_id IN (
+--     select project_id from project_members where user_id = auth.uid()
+--   )
+-- )
+-- with check (
+--   user_id = auth.uid()
+--   OR project_id IN (
+--     select project_id from project_members where user_id = auth.uid()
+--   )
+-- );
+
+-- -- 4. DELETE: same rules
+-- create policy "Delete own or project phenotypes"
+-- on phenotypes
+-- for delete
+-- using (
+--   user_id = auth.uid()
+--   OR project_id IN (
+--     select project_id from project_members where user_id = auth.uid()
+--   )
+-- );
+
+
     """
     print("Please create the table using the SQL in the function docstring")
 

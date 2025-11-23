@@ -10,6 +10,9 @@ import Aura from '@primevue/themes/aura'
 import {ConfirmationService} from "primevue";
 import Ripple from 'primevue/ripple';
 
+// vue-code-block
+import { createVCodeBlock } from '@wdns/vue-code-block';
+
 // apexcharts
 import VueApexCharts from "vue3-apexcharts";
 
@@ -19,6 +22,7 @@ import "./style.css"
 
 // create
 const app = createApp(App)
+const VCodeBlock = createVCodeBlock();
 
 // use the PrimeVue library
 app.use(PrimeVue, {
@@ -38,6 +42,7 @@ app.use(ToastService);
 app.use(ConfirmationService)
 app.component('Toast', Toast);
 app.component('apexchart', VueApexCharts)
+app.component('VCodeBlock', VCodeBlock);
 app.directive('tooltip', Tooltip);
 app.directive('ripple', Ripple);
 app.mount('#app')

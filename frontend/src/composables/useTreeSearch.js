@@ -1,7 +1,9 @@
-import { ref, reactive, computed } from 'vue'
+import {ref, reactive, computed, watch} from 'vue'
 import { supabase } from '@/composables/useSupabase.js'
 import { apiClient } from '@/composables/apiClient.js'
 import { useNotifications } from './useNotifications'
+import { usePhenotypes } from "@/composables/usePhenotypes.js";
+
 
 // ---------------------------------------------
 // GLOBAL STATE
@@ -223,7 +225,7 @@ export function useTreeSearch() {
     // ------------------------------------------------------------
     // API: RESTORE SPECIFIC NODES (Hydration)
     // ------------------------------------------------------------
-    const fetchSpecificNodes = async (ids) => {
+    const fetchSpecificNodes = async (ids, inject = {}) => {
         if (!ids || ids.length === 0) return;
 
         try {
@@ -237,11 +239,9 @@ export function useTreeSearch() {
 
             // STEP 2: Collect ALL IDs needed (Targets + Ancestors)
             const allIdsToFetch = new Set();
-
             targetNodes.forEach(node => {
                 // Add the node itself
                 allIdsToFetch.add(String(node.id));
-
                 // Parse path "1/5/12" -> Add 1, 5, 12
                 if (node.materialized_path) {
                     const pathIds = node.materialized_path.split('/').filter(Boolean);
@@ -258,19 +258,23 @@ export function useTreeSearch() {
                 `)
                 .in('id', Array.from(allIdsToFetch));
 
-            // STEP 4: Format
+            // STEP 4: Format & inject
             const fullResults = fullData.map(row => {
                 // Flatten the system object into a string
                 // If row.system is { name: "ICD-10" }, this grabs just "ICD-10"
                 const systemName = row.system?.name || '';
+                const nodeId = String(row.id);
+
+                // Check if we have extra data to inject for this specific ID
+                const extraData = inject[nodeId] || {};
 
                 return {
                     key: String(row.id),
                     label: `${row.code} - ${row.description}`,
                     data: {
                         ...row,
-                        // OVERWRITE the system object with the string name
-                        system: systemName
+                        system: systemName, // OVERWRITE the system object with the string name
+                        ...extraData // OVERWRITE any other data that we want, or inject more
                     }
                 };
             });
@@ -281,7 +285,7 @@ export function useTreeSearch() {
             mergeSearchNodesIntoTree({
                 results: fullResults,
                 ancestor_map: {},
-                isHydration: true
+                clearPrevious: false
             });
 
         } catch (err) {
@@ -292,38 +296,34 @@ export function useTreeSearch() {
     // ------------------------------------------------------------
     // LOGIC: MERGE NODES INTO TREE
     // ------------------------------------------------------------
-    function mergeSearchNodesIntoTree({ results, ancestor_map, isHydration = false }) {
+    function mergeSearchNodesIntoTree({ results, ancestor_map, clearPrevious = false }) {
         // console.log("=== mergeSearchNodesIntoTree ===");
         // console.log("Results array length:", results.length);
         // console.log("Initial nodes.value:", nodes.value);
-        if (!isHydration) {
+        if (clearPrevious) {
             clearSearchFlags(nodes.value);
-
-            // Mark globals
-            const searchResultIds = new Set(results.map(r => r.key));
-            searchResultIds.forEach(id => {
-                searchNodeKeys.value[id] = true;
-            });
+            searchNodeKeys.value = {};
         }
+
+        // Update global index based on incoming results
+        results.forEach(r => {
+            if (r.data?.found_in_search) {
+                searchNodeKeys.value[r.key] = true;
+            }
+        });
 
         results.forEach((result, resultIndex) => {
             const pathString = result.data.materialized_path || String(result.key);
             const pathIds = pathString.split('/').filter(Boolean);
 
             let currentLevel = nodes.value; // assuming nodes is a ref
-            // console.log(`\nProcessing result #${resultIndex}, pathIds:`, pathIds);
 
             pathIds.forEach((id, index) => {
-                // console.log(`  At path index ${index}, id: ${id}`);
-                // console.log("  currentLevel before find:", currentLevel);
-
                 if (!Array.isArray(currentLevel)) currentLevel = [];
 
                 let node = currentLevel.find(n => n.key === id);
-                // console.log("  Found node:", node);
 
                 if (!node) {
-                    // Use ancestor_map if available, otherwise fallback to result
                     const isTargetNode = (id === String(result.key));
                     const source = isTargetNode ? result : (ancestor_map?.[id] || {
                         label: 'Loading...',
@@ -335,18 +335,14 @@ export function useTreeSearch() {
                         children: [],
                         leaf: index === pathIds.length - 1,
                         selectable: source.data?.is_selectable ?? true,
-                        data: {                        // preserve the original data object
-                            ...source.data,
-                            found_in_search: !isHydration && searchNodeKeys.value[id]
-                        }
+                        data: { ...source.data }
                     };
 
                     currentLevel.push(node);
-                    // console.log("  Created new node:", node);
 
                 } else {
                     // If node exists, we MUST re-apply the flag if it was found again
-                    if (!isHydration && searchNodeKeys.value[id]) {
+                    if (result.data?.found_in_search && id === String(result.key)) {
                         if (!node.data) node.data = {};
                         node.data.found_in_search = true;
                     }
@@ -358,7 +354,6 @@ export function useTreeSearch() {
                 }
 
                 currentLevel = node.children = node.children || [];
-            // console.log("  currentLevel after update:", currentLevel);
             });
         });
 
@@ -390,11 +385,29 @@ export function useTreeSearch() {
         try {
             const res = await apiClient.post('/api/search-nodes', payload)
 
+            // Inject found_in_search: true here, so merge logic is identical to hydration
+            const preparedResults = res.data.results.map(r => ({
+                ...r,
+                data: {
+                    ...r.data,
+                    found_in_search: true
+                }
+            }));
+
             mergeSearchNodesIntoTree({
-                results: res.data.results,
+                results: preparedResults,
                 ancestor_map: res.data.ancestor_map,
-                isHydration: false
+                clearPrevious: true
             })
+
+            // --- AUTO SELECT RESULTS ---
+            if (autoSelect.value) {
+                const nextSelection = { ...selectedNodeKeys.value }
+                preparedResults.forEach(r => {
+                    nextSelection[r.key] = true
+                })
+                selectedNodeKeys.value = nextSelection
+            }
 
             emitSuccess('Search Complete', `${res.data.results.length} items found.`)
 
@@ -403,7 +416,6 @@ export function useTreeSearch() {
         }
 
     }
-
 
 
     // ------------------------------------------------------------

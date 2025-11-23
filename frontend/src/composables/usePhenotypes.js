@@ -8,7 +8,8 @@ import { useNotifications } from './useNotifications'
 // globals - these are set once in memory
 const phenotypes = ref([]);          // list for active project
 const emptyPhenotype = {id: '', user_id: '', name: '', description: '', project_id: '', source: ''};
-const currentPhenotype = ref(emptyPhenotype);
+const currentPhenotype = ref( { ...emptyPhenotype });
+
 
 // export
 export function usePhenotypes() {
@@ -169,7 +170,8 @@ export function usePhenotypes() {
             return emitError("Save failed", error.message)
         }
 
-        phenotypes.value.unshift(data)
+        currentPhenotype.value = data // update with returned data (e.g., new ID)
+        phenotypes.value.unshift(data) // add to local list
         emitSuccess("Saved", `Phenotype "${data.name}" saved.`)
 
         return data;
@@ -199,7 +201,11 @@ export function usePhenotypes() {
 
     function emptyPhenotypes() {
         phenotypes.value = []
-        currentPhenotype.value = emptyPhenotype
+        currentPhenotype.value = { ...emptyPhenotype }
+    }
+
+    function clearPhenotype() {
+        currentPhenotype.value = { ...emptyPhenotype }
     }
 
     return {
@@ -215,6 +221,7 @@ export function usePhenotypes() {
         fetchPhenotypes,
         savePhenotype,
         deletePhenotype,
-        emptyPhenotypes
+        emptyPhenotypes,
+        clearPhenotype
     }
 }

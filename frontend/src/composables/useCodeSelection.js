@@ -4,7 +4,7 @@ import { useNotifications } from './useNotifications'
 import { useTreeSearch } from "@/composables/useTreeSearch.js";
 import { useAuth } from "@/composables/useAuth.js";
 import { usePhenotypes } from "@/composables/usePhenotypes.js";
-import { useProjects } from "@/composables/useProjects.js";
+import { useDownload } from "@/composables/useDownload.js";
 
 // composables
 const {
@@ -15,6 +15,8 @@ const {
     fetchSearchStrategy,
     saveSearchStrategy
 } = useTreeSearch()
+
+
 
 // ---------------------------------------------
 // GLOBAL STATE
@@ -57,9 +59,11 @@ const tableRows = computed(() => {
     return rows;
 });
 const isSaving = ref(false);
+const isFinalized = ref(false);
 const isReviewMode = ref(false);
 const teamSelections = ref({}); // Format: { codeId: { userId: { is_selected, comment, email } } }
 const projectMembers = ref([]); // List of users found in the dataset
+let watchersInitialized = false;
 
 // ---------------------------------------------
 // COMPOSABLE
@@ -69,6 +73,7 @@ export function useCodeSelection() {
     const { emitError, emitSuccess } = useNotifications()
     const { user } = useAuth()
     const { currentPhenotype } = usePhenotypes()
+    const { resetDownloadCache } = useDownload()
 
     // ------------------------------------------------------------
     // HELPERS
@@ -148,6 +153,7 @@ export function useCodeSelection() {
         // 1. Validation
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
+        console.log("Saving selections for phenotype:", phenotypeId, "user:", userId);
         if (!phenotypeId || !userId) return;
 
         isSaving.value = true;
@@ -165,6 +171,8 @@ export function useCodeSelection() {
                 comment: row.comment || null, // Text if typed
             }));
 
+            console.log("Payload to save:", payload);
+
             if (payload.length === 0) return;
 
             // 3. The "One Shot" Save
@@ -179,6 +187,8 @@ export function useCodeSelection() {
             await saveSearchStrategy(phenotypeId);
 
             emitSuccess("Saved", `Updated ${payload.length} codes.`);
+
+            await resetDownloadCache(phenotypeId);
 
         } catch (error) {
             console.error(error);
@@ -206,7 +216,19 @@ export function useCodeSelection() {
             .select('code_id, comments')
             .eq('phenotype_id', phenotypeId);
 
-        const [userRes, consensusRes] = await Promise.all([userQuery, consensusQuery]);
+        // C. Fetch SEARCH RESULTS (Global for this Phenotype)
+        // This ensures that if User A found codes via search, User B sees them too.
+        const searchResQuery = supabase
+            .from('user_code_selections')
+            .select('code_id')
+            .eq('phenotype_id', phenotypeId)
+            .eq('found_in_search', true);
+
+        const [userRes, consensusRes, searchRes] = await Promise.all([
+            userQuery,
+            consensusQuery,
+            searchResQuery
+        ]);
 
         if (userRes.error) console.error(userRes.error);
         if (consensusRes.error) console.error(consensusRes.error);
@@ -219,36 +241,54 @@ export function useCodeSelection() {
         // Collect ALL IDs that need to be displayed (User + Consensus)
         const allIdsToLoad = new Set();
 
-        // Process User Data
-        (userRes.data || []).forEach(row => {
-            allIdsToLoad.add(row.code_id); // Add to set
-
-            if (row.is_selected) restoredSelected[row.code_id] = true;
-            if (row.found_in_search) restoredSearch[row.code_id] = true;
-            if (row.comment) restoredComments[row.code_id] = row.comment;
+        // 3. Populate "Found in Search" (Base Layer)
+        // We use the global list, so the tree is fully populated for everyone
+        (searchRes.data || []).forEach(row => {
+            allIdsToLoad.add(row.code_id);
+            restoredSearch[row.code_id] = true;
         });
 
-        // Process Consensus Data
+        // 4. Overlay User Data (Personal Layer)
+        (userRes.data || []).forEach(row => {
+            allIdsToLoad.add(row.code_id);
+
+            if (row.is_selected) restoredSelected[row.code_id] = true;
+            if (row.comment) restoredComments[row.code_id] = row.comment;
+
+            // Note: We don't overwrite restoredSearch here.
+            // The global query (Step 3) handles the 'found' status.
+        });
+
+        // 5. Overlay Consensus Data
         const consensusMap = {};
         (consensusRes.data || []).forEach(row => {
-            allIdsToLoad.add(row.code_id); // Add to set (handles items user didn't pick)
+            allIdsToLoad.add(row.code_id);
             consensusMap[row.code_id] = {
                 selected: true,
                 comment: row.comments || ''
             };
         });
 
-        // --- 2. UPDATE GLOBALS ---
+        // --- 3. HYDRATE THE TREE (The Missing Piece) ---
+        // This fetches the actual Code/Description text for the table
+        if (allIdsToLoad.size > 0) {
+            // This maps ID -> { found_in_search: boolean } could be other data later too...
+            // This is passed to fetchSpecificNodes to apply styling during creation
+            const injectionMap = {};
+            allIdsToLoad.forEach(id => {
+                injectionMap[id] = {
+                    found_in_search: !!restoredSearch[id]
+                }
+            });
+
+            await fetchSpecificNodes(Array.from(allIdsToLoad), injectionMap);
+        }
+
+        // --- UPDATE GLOBALS after hydrating the tree ---
         selectedNodeKeys.value = restoredSelected;
         searchNodeKeys.value = restoredSearch;
         userComments.value = restoredComments;
         consensusState.value = consensusMap;
-
-        // --- 3. HYDRATE THE TREE (The Missing Piece) ---
-        // This fetches the actual Code/Description text for the table
-        if (allIdsToLoad.size > 0) {
-            await fetchSpecificNodes(Array.from(allIdsToLoad));
-        }
     };
 
     const fetchTeamSelections = async () => {
@@ -329,12 +369,11 @@ export function useCodeSelection() {
 
     const fetchConsensus = async () => {
         const phenotypeId = currentPhenotype.value?.id;
-        const userId = user.value?.id;
-        if (!phenotypeId || !userId) return;
+        if (!phenotypeId) return;
 
         const { data, error } = await supabase
             .from('phenotype_consensus')
-            .select('code_id, comments') // implicit existence = selected
+            .select('code_id, comments, finalized_at') // implicit existence = selected
             .eq('phenotype_id', phenotypeId);
 
         if (error) {
@@ -345,57 +384,69 @@ export function useCodeSelection() {
 
         // Map DB results to local state
         const map = {};
+        let locked = false;
         data.forEach(row => {
             map[row.code_id] = {
                 selected: true, // If it's in this table, it is selected
                 comment: row.comments || ''
             };
+            if (row.finalized_at) locked = true;
         });
         // console.log("Fetched Consensus Data:", map);
         consensusState.value = map;
+        isFinalized.value = locked;
     };
 
-    const saveConsensus = async (final = false) => {
-        // console.log("Using save Consensus", final);
-        // finalRows should be the array of row objects from your table
-        // e.g. tableRows.value.filter(r => r.selected)
+    const saveConsensus = async (finalize = false) => {
         const phenotypeId = currentPhenotype.value?.id;
-        const userId = user.value?.id;
-        if (!phenotypeId || !userId) return;
+        if (!phenotypeId) return;
 
         isSaving.value = true;
 
-        // console.log("Table Rows:", tableRows.value);
         const finalRows = tableRows.value.filter(r => r.consensus_selected);
-        // console.log("Final Rows for Consensus:", finalRows);
 
         try {
             // 1. Clear previous consensus for this phenotype
             // (Ensures we don't keep "stale" codes that were unselected this time)
-            await supabase
+            const { error: deleteError } = await supabase
                 .from('phenotype_consensus')
                 .delete()
                 .eq('phenotype_id', phenotypeId);
 
+            if (deleteError) {
+                emitError("Error", "Failed to clean consensus DB prior to saving.");
+                return;
+            }
+
             // 2. Prepare Payload
-            // We map the UI table rows to the DB columns
             const payload = finalRows.map(row => ({
                 phenotype_id: phenotypeId,
                 code_id: parseInt(row.key),
                 comments: row.consensus_comment,
-                finalized_at: null
+                finalized_at: finalize ? new Date().toISOString() : null
             }));
 
+            isFinalized.value = finalize;
+
             // console.log("Consensus Payload:", payload);
-
-            if (payload.length === 0) return;
-
             // 3. Insert
-            const { error } = await supabase
-                .from('phenotype_consensus')
-                .insert(payload);
+            if (payload.length > 0) {
+                const { error } = await supabase
+                    .from('phenotype_consensus')
+                    .upsert(payload, {
+                    // Crucial: Define what constitutes a conflict
+                    onConflict: 'phenotype_id, code_id'
+                });
 
-            emitSuccess("Consensus Saved", `Finalized ${payload.length} codes.`);
+                if (error) {
+                    emitError("Error", "Failed to save consensus.");
+                }
+            }
+
+            const action = finalize ? "Finalized" : "Saved";
+            emitSuccess(`${action}`, `${action} ${payload.length} codes successfully.`);
+
+            await resetDownloadCache(phenotypeId);
 
         } catch (err) {
             console.error(err);
@@ -405,45 +456,69 @@ export function useCodeSelection() {
         }
     };
 
+    // ------------------------------------------------------------
+    // UNLOCK (Revert to Draft)
+    // ------------------------------------------------------------
+    const unlockConsensus = async () => {
+        const phenotypeId = currentPhenotype.value?.id;
+        if (!phenotypeId) return;
 
+        isSaving.value = true;
 
-    const handleFinalise = async () => {
-        console.log("Using finalise Team Selections");
+        try {
+            // Update all records for this phenotype to set finalized_at to NULL
+            const { error } = await supabase
+                .from('phenotype_consensus')
+                .update({ finalized_at: null })
+                .eq('phenotype_id', phenotypeId);
 
+            if (error) throw error;
 
-        // Simulate Network Delay
-        await new Promise(resolve => setTimeout(resolve, 500));
-    };
+            isFinalized.value = false;
+
+            emitSuccess("Unlocked", "Consensus codes are now editable.");
+
+            await resetDownloadCache(phenotypeId);
+
+        } catch (err) {
+            console.error(err);
+            emitError("Unlock Failed", "Could not unlock codes.");
+        } finally {
+            isSaving.value = false;
+        }
+    }
 
     // ------------------------------------------------------------
     // COMPOSABLE WATCHERS
     // ------------------------------------------------------------
-    watch(isReviewMode, async (newValue) => {
-      if (newValue) {
-          // Parallel Fetch: Get Team data AND Current Consensus data
-          await Promise.all([
-              fetchTeamSelections(),
-              fetchConsensus()
-          ]);
-      }
-    });
+    if (!watchersInitialized) {
+        watch(isReviewMode, async (newValue) => {
+          if (newValue) {
+              // Parallel Fetch: Get Team data AND Current Consensus data
+              await Promise.all([
+                  fetchTeamSelections(),
+                  fetchConsensus()
+              ]);
+          }
+        });
 
-    watch(
-        () => currentPhenotype.value?.id,
-        async (newId) => {
-            if (newId) {
-                // Reset and Fetch
-                selectedNodeKeys.value = {};
-                searchNodeKeys.value = {}; // Reset highlights
-                userComments.value = {};
+        watch(
+            () => currentPhenotype.value?.id,
+            async (newId) => {
+                if (newId) {
+                    clearSelectionState();
+                    await fetchUserSelections(); // Restore checkmarks & highlights
+                    await fetchConsensus();
+                    await fetchSearchStrategy(newId); // restore search terms used
+                } else {
+                    clearSelectionState();
+                }
+            },
+            { immediate: true }
+        );
 
-                await fetchUserSelections(); // Restore checkmarks & highlights
-                await fetchConsensus();
-                await fetchSearchStrategy(newId); // restore search terms used
-            }
-        },
-        { immediate: true }
-    );
+        watchersInitialized = true;
+    }
 
     // ------------------------------------------------------------
     // EXPORT
@@ -452,6 +527,7 @@ export function useCodeSelection() {
         // state
         isSaving,
         isReviewMode,
+        isFinalized,
         isAllSelected,
         isIndeterminate,
         selectionState,
@@ -469,8 +545,8 @@ export function useCodeSelection() {
         getTeamMemberStatus,
         updateConsensusSelection,
         updateConsensusComment,
+        clearSelectionState,
         saveConsensus,
-        handleFinalise,
-        clearSelectionState
+        unlockConsensus
     }
 }

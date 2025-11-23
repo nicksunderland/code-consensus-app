@@ -13,6 +13,7 @@ import {useCodeSelection} from "@/composables/useCodeSelection.js";
 
 // Destructure composable to get auto-unwrapped refs
 const {
+  isAnalysisActive,
   selectedMetric,
   sliderRange,   // The actual handle values [min, max]
   sliderBounds,  // The track limits { min, max, step }
@@ -35,11 +36,17 @@ const {
 
         <div class="diagnostic-card-panel-left">
           <apexchart
+            v-if="isAnalysisActive && series.length > 0"
             type="heatmap"
             height="350"
             :options="chartOptions"
             :series="series"
             width="100%" />
+
+          <div v-if="isAnalysisActive && series.length === 0" class="empty-chart-placeholder">
+              <i class="pi pi-chart-bar" style="font-size: 2rem; color: #ccc;"></i>
+              <p>Run analysis to view heatmap</p>
+          </div>
         </div>
 
         <Panel header="Controls" class="diagnostic-card-panel-right">
@@ -82,3 +89,4 @@ const {
   </Card>
 
 </template>
+

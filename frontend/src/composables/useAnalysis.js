@@ -221,42 +221,27 @@ export function useAnalysis() {
     // SINGLETON WATCHER
     // ------------------------------------------------------
     if (!watchersInitialized) {
-        // We watch an ARRAY of sources: [SelectionString, IsActive]
-        // This handles both "Wake Up" and "Selection Change" in one place.
         watch(
             [
-                // Source 1: Uniquely identify the selection
-                () => tableRows.value
-                        .filter(r => r.selected)
-                        .map(r => r.key)
-                        .join(','),
-                // Source 2: The Gatekeeper flag
+                () => tableRows.value.filter(r => r.selected).map(r => r.key).join(','),
                 isAnalysisActive
             ],
-            async ([newSelectionStr, isActive], [oldSelectionStr, wasActive]) => {
-
-                // 1. GATE: If analysis is paused, do nothing.
+            async ([newSelectionStr, isActive]) => {
                 if (!isActive) return;
-
-                // 2. LOGIC:
-                // If we have a selection, fetch bounds.
-                // This runs if Selection changes (while active) OR if Active becomes true (while selected)
                 if (newSelectionStr.length > 0) {
-                    // Optional: Don't refetch if selection hasn't changed and we are just waking up?
-                    // For safety, we usually just fetch to be sure.
                     await fetchBounds();
                 }
             },
             { immediate: true }
         );
 
-        // Watch for metric changes (simplest to keep separate or merge above)
         watch(selectedMetric, (newMetric) => {
-            if(isAnalysisActive.value) applySliderSettings(newMetric)
+            if (isAnalysisActive.value) applySliderSettings(newMetric)
         });
 
-        watchersInitialized = true; // Lock it so future calls don't create duplicates
+        watchersInitialized = true;
     }
+
 
     return {
         // state

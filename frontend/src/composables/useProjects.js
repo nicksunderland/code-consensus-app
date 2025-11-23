@@ -2,6 +2,8 @@ import { ref, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase'
 import { useAuth } from '@/composables/useAuth.js'
 import { useNotifications } from './useNotifications'
+import { useCodeSelection } from "@/composables/useCodeSelection.js";
+import { useTreeSearch } from "@/composables/useTreeSearch.js";
 
 // globals - these are set once in memory
 /**
