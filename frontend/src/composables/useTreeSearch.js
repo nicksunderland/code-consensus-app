@@ -1,4 +1,5 @@
 import { ref, reactive, computed } from 'vue'
+import { supabase } from '@/composables/useSupabase.js'
 import { apiClient } from '@/composables/apiClient.js'
 import { useNotifications } from './useNotifications'
 
@@ -28,7 +29,7 @@ export function useTreeSearch() {
     const { emitError, emitSuccess } = useNotifications()
 
     // ------------------------------------------------------------
-    // ADJUST NODE INCLUSION FLAGS
+    // UTILS
     // ------------------------------------------------------------
     function clearSearchFlags(nodesArr) {
 
@@ -47,8 +48,17 @@ export function useTreeSearch() {
         errorMessage.value = null
     }
 
+    function clearTreeState() {
+        nodes.value = []
+        selectedNodeKeys.value = {}
+        searchNodeKeys.value = {}
+        expandedNodeKeys.value = {}
+        errorMessage.value = null
+        searchInputs.value = [makeSearchInput()]
+    }
+
     // ------------------------------------------------------------
-    // SEARCH INPUT MODEL
+    // SEARCH INPUTS
     // ------------------------------------------------------------
     const makeSearchInput = () => ({
         text: '',
@@ -58,7 +68,21 @@ export function useTreeSearch() {
     })
 
     function addSearchTerm() {
-        searchInputs.value.push(makeSearchInput())
+        if (searchInputs.value.length === 0) {
+            searchInputs.value.push(makeSearchInput())
+            return
+        }
+        const allFilled = searchInputs.value.every(input => {
+            return input.text && input.text.trim() !== "";
+        });
+        if (allFilled) {
+            searchInputs.value.push(makeSearchInput())
+        } else {
+            const isSingleEmptyRow = searchInputs.value.length === 1 && !searchInputs.value[0].text;
+            if (!isSingleEmptyRow) {
+                 emitError("Incomplete Search Term", "Please fill in all existing search terms before adding a new one.")
+            }
+        }
     }
 
     function removeSearchTerm(index) {
@@ -67,11 +91,285 @@ export function useTreeSearch() {
         }
     }
 
+    function sortTreeNodes(nodesArr) {
+        if (!Array.isArray(nodesArr)) return;
+
+        nodesArr.sort((a, b) => {
+            const valA = a.data?.code || a.label || "";
+            const valB = b.data?.code || b.label || "";
+            // Numeric: true handles "A1, A2, A10" correctly instead of "A1, A10, A2"
+            return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+
+        // Recursively sort children
+        nodesArr.forEach(node => {
+            if (node.children && node.children.length > 0) {
+                sortTreeNodes(node.children);
+            }
+        });
+    }
+
     // ------------------------------------------------------------
-    // RUN SEARCH
+    // SAVE / RELOAD SEARCH
+    // ------------------------------------------------------------
+    const saveSearchStrategy = async (phenotypeId) => {
+        if (!phenotypeId) return;
+
+        // 1. Prepare Payload
+        // Map your UI 'searchInputs' to the DB columns
+        const payload = searchInputs.value.map((input, index) => ({
+            phenotype_id: phenotypeId,
+            term: input.text,
+            is_regex: input.regex,
+            target_columns: input.columns,     // ["code", "description"]
+            system_ids: input.system_ids,      // [1]
+            is_ai_enhanced: false,             // Future placeholder
+            row_order: index
+        }));
+
+        // 2. Sync (Delete Old -> Insert New)
+        // A. Delete existing strategy for this phenotype
+        const { error: delError } = await supabase
+            .from('phenotype_search_terms')
+            .delete()
+            .eq('phenotype_id', phenotypeId);
+
+        if (delError) {
+            console.error("Failed to clear old search strategy", delError);
+            return;
+        }
+
+        // B. Insert new strategy (if any exist)
+        if (payload.length > 0) {
+            const { error: insError } = await supabase
+                .from('phenotype_search_terms')
+                .insert(payload);
+
+            if (insError) console.error("Failed to save search strategy", insError);
+        }
+    };
+
+    const fetchSearchStrategy = async (phenotypeId) => {
+        if (!phenotypeId) return;
+
+        const { data, error } = await supabase
+            .from('phenotype_search_terms')
+            .select('*')
+            .eq('phenotype_id', phenotypeId)
+            .order('row_order', { ascending: true });
+
+        if (error) {
+            console.error("Error loading search strategy", error);
+            return;
+        }
+
+        if (data && data.length > 0) {
+            // Map DB rows back to your UI object structure
+            searchInputs.value = data.map(row => ({
+                text: row.term,
+                regex: row.is_regex,
+                columns: row.target_columns, // Postgres array becomes JS array automatically
+                system_ids: row.system_ids,  // Postgres array becomes JS array automatically
+                // ai_enhanced: row.is_ai_enhanced (future)
+            }));
+        } else {
+            // Default to one empty input if nothing saved
+            searchInputs.value = [makeSearchInput()];
+        }
+    };
+
+    // ------------------------------------------------------------
+    // API: LAZY LOAD CHILDREN
+    // ------------------------------------------------------------
+    const onNodeExpand = async (node) => {
+
+        const isRoot = !node;
+        const parentId = isRoot ? null : node.key;
+
+        // console.log("parentId:", parentId)
+        // console.log("isRoot:", isRoot)
+
+        if (isRoot || !node.leaf) {
+
+            if (node) node.loading = true;
+
+            try {
+                // console.log("parentId:", parentId)
+                const res = await apiClient.get('/api/tree-nodes', { params: { parent_id: parentId } });
+                // console.log("await apiClient.get:", res)
+
+                const children = res.data.map(child => ({ ...child }));
+
+                if (isRoot) {
+                    nodes.value = children;
+                    // console.log('Root nodes loaded:', nodes.value);
+                } else {
+                    node.children = children;
+                    // console.log('Node after assigning children:', node);
+                }
+
+                // Ensure loaded children are sorted immediately
+                sortTreeNodes(isRoot ? nodes.value : node.children);
+
+            } catch (err) {
+                console.error('Failed to load children for node', node.key, err);
+            } finally {
+                if (node) node.loading = false;
+            }
+        }
+        // console.log("The nodes value", nodes.value)
+    };
+
+    // ------------------------------------------------------------
+    // API: RESTORE SPECIFIC NODES (Hydration)
+    // ------------------------------------------------------------
+    const fetchSpecificNodes = async (ids) => {
+        if (!ids || ids.length === 0) return;
+
+        try {
+            // STEP 1: Fetch the requested nodes first to get their paths
+            const { data: targetNodes, error: targetError } = await supabase
+                .from('codes')
+                .select('id, materialized_path')
+                .in('id', ids);
+
+            if (targetError) throw targetError;
+
+            // STEP 2: Collect ALL IDs needed (Targets + Ancestors)
+            const allIdsToFetch = new Set();
+
+            targetNodes.forEach(node => {
+                // Add the node itself
+                allIdsToFetch.add(String(node.id));
+
+                // Parse path "1/5/12" -> Add 1, 5, 12
+                if (node.materialized_path) {
+                    const pathIds = node.materialized_path.split('/').filter(Boolean);
+                    pathIds.forEach(pId => allIdsToFetch.add(pId));
+                }
+            });
+
+            // STEP 3: Fetch details for EVERYONE in the chain
+            const { data: fullData, error: fullError } = await supabase
+                .from('codes')
+                .select(`
+                    *,
+                    system:code_systems ( name )
+                `)
+                .in('id', Array.from(allIdsToFetch));
+
+            // STEP 4: Format
+            const fullResults = fullData.map(row => {
+                // Flatten the system object into a string
+                // If row.system is { name: "ICD-10" }, this grabs just "ICD-10"
+                const systemName = row.system?.name || '';
+
+                return {
+                    key: String(row.id),
+                    label: `${row.code} - ${row.description}`,
+                    data: {
+                        ...row,
+                        // OVERWRITE the system object with the string name
+                        system: systemName
+                    }
+                };
+            });
+
+            // STEP 5: Merge
+            // We pass an empty ancestor_map because we manually fetched all the ancestors
+            // and included them in 'results', so the merger will find them naturally.
+            mergeSearchNodesIntoTree({
+                results: fullResults,
+                ancestor_map: {},
+                isHydration: true
+            });
+
+        } catch (err) {
+            console.error("Error restoring specific nodes:", err);
+        }
+    };
+
+    // ------------------------------------------------------------
+    // LOGIC: MERGE NODES INTO TREE
+    // ------------------------------------------------------------
+    function mergeSearchNodesIntoTree({ results, ancestor_map, isHydration = false }) {
+        // console.log("=== mergeSearchNodesIntoTree ===");
+        // console.log("Results array length:", results.length);
+        // console.log("Initial nodes.value:", nodes.value);
+        if (!isHydration) {
+            clearSearchFlags(nodes.value);
+
+            // Mark globals
+            const searchResultIds = new Set(results.map(r => r.key));
+            searchResultIds.forEach(id => {
+                searchNodeKeys.value[id] = true;
+            });
+        }
+
+        results.forEach((result, resultIndex) => {
+            const pathString = result.data.materialized_path || String(result.key);
+            const pathIds = pathString.split('/').filter(Boolean);
+
+            let currentLevel = nodes.value; // assuming nodes is a ref
+            // console.log(`\nProcessing result #${resultIndex}, pathIds:`, pathIds);
+
+            pathIds.forEach((id, index) => {
+                // console.log(`  At path index ${index}, id: ${id}`);
+                // console.log("  currentLevel before find:", currentLevel);
+
+                if (!Array.isArray(currentLevel)) currentLevel = [];
+
+                let node = currentLevel.find(n => n.key === id);
+                // console.log("  Found node:", node);
+
+                if (!node) {
+                    // Use ancestor_map if available, otherwise fallback to result
+                    const isTargetNode = (id === String(result.key));
+                    const source = isTargetNode ? result : (ancestor_map?.[id] || {
+                        label: 'Loading...',
+                        data: { is_selectable: false }
+                    });
+                    node = {
+                        key: id.toString(),
+                        label: source.label || source.data?.code || id,
+                        children: [],
+                        leaf: index === pathIds.length - 1,
+                        selectable: source.data?.is_selectable ?? true,
+                        data: {                        // preserve the original data object
+                            ...source.data,
+                            found_in_search: !isHydration && searchNodeKeys.value[id]
+                        }
+                    };
+
+                    currentLevel.push(node);
+                    // console.log("  Created new node:", node);
+
+                } else {
+                    // If node exists, we MUST re-apply the flag if it was found again
+                    if (!isHydration && searchNodeKeys.value[id]) {
+                        if (!node.data) node.data = {};
+                        node.data.found_in_search = true;
+                    }
+                }
+
+                // Mark ancestors as expanded
+                if (index < pathIds.length - 1) {
+                    expandedNodeKeys.value[id] = true;
+                }
+
+                currentLevel = node.children = node.children || [];
+            // console.log("  currentLevel after update:", currentLevel);
+            });
+        });
+
+        // Finally, sort the entire tree after merging
+        sortTreeNodes(nodes.value);
+    }
+
+    // ------------------------------------------------------------
+    // API: RUN SEARCH
     // ------------------------------------------------------------
     async function runSearch() {
-
         const payload = {
             searches: searchInputs.value
                 .filter(s => s.text.trim())
@@ -91,13 +389,11 @@ export function useTreeSearch() {
 
         try {
             const res = await apiClient.post('/api/search-nodes', payload)
-            clearSearchFlags(nodes.value)
 
             mergeSearchNodesIntoTree({
                 results: res.data.results,
                 ancestor_map: res.data.ancestor_map,
-                treeNodes: nodes.value,
-                expandedKeys: expandedNodeKeys.value,
+                isHydration: false
             })
 
             emitSuccess('Search Complete', `${res.data.results.length} items found.`)
@@ -108,114 +404,7 @@ export function useTreeSearch() {
 
     }
 
-    // ------------------------------------------------------------
-    // LAZY LOAD TREE CHILDREN
-    // ------------------------------------------------------------
-    const onNodeExpand = async (node) => {
 
-        const isRoot = !node;
-        const parentId = isRoot ? null : node.key;
-
-        console.log("parentId:", parentId)
-        console.log("isRoot:", isRoot)
-
-        if (isRoot || !node.leaf) {
-
-            if (node) node.loading = true;
-
-            try {
-                console.log("parentId:", parentId)
-                const res = await apiClient.get('/api/tree-nodes', { params: { parent_id: parentId } });
-                console.log("await apiClient.get:", res)
-
-                const children = res.data.map(child => ({ ...child }));
-
-                if (isRoot) {
-                    nodes.value = children;
-                    console.log('Root nodes loaded:', nodes.value);
-                } else {
-                    node.children = children;
-                    console.log('Node after assigning children:', node);
-                }
-
-            } catch (err) {
-                console.error('Failed to load children for node', node.key, err);
-            } finally {
-                if (node) node.loading = false;
-            }
-        }
-        console.log("The nodes value", nodes.value)
-    };
-
-    function mergeSearchNodesIntoTree({ results, ancestor_map }) {
-        console.log("=== mergeSearchNodesIntoTree ===");
-        console.log("Results array length:", results.length);
-        console.log("Initial nodes.value:", nodes.value);
-
-        // 🔹 Reset all existing found_in_search flags before applying new search results
-        clearSearchFlags(nodes.value);
-
-        // get the ids of the search results
-        const searchResultIds = new Set(results.map(r => r.key));
-        searchResultIds.forEach(id => {
-            searchNodeKeys.value[id] = true;   // or { found: true }
-        });
-
-        results.forEach((result, resultIndex) => {
-
-            const pathIds = result.data.materialized_path.split('/').filter(Boolean);
-
-            let currentLevel = nodes.value; // assuming nodes is a ref
-            console.log(`\nProcessing result #${resultIndex}, pathIds:`, pathIds);
-
-            pathIds.forEach((id, index) => {
-                console.log(`  At path index ${index}, id: ${id}`);
-                console.log("  currentLevel before find:", currentLevel);
-
-                if (!Array.isArray(currentLevel)) {
-                    console.error('currentLevel is not an array!', currentLevel);
-                    currentLevel = [];
-                }
-
-                let node = currentLevel.find(n => n.key === id);
-                console.log("  Found node:", node);
-
-                if (!node) {
-                    // Use ancestor_map if available, otherwise fallback to result
-                    const source = ancestor_map[id] || result;
-                    node = {
-                        key: id.toString(),
-                        label: source.label,           // label for display
-                        children: [],
-                        leaf: index === pathIds.length - 1,
-                        selectable: source.data.is_selectable,
-                        data: {                        // preserve the original data object
-                            ...source.data,
-                            found_in_search: searchResultIds.has(id)
-                        }
-                    };
-
-                    currentLevel.push(node);
-                    console.log("  Created new node:", node);
-
-                } else {
-                    // Node already exists, update search hit if applicable
-                    if (searchResultIds.has(id)) {
-                        node.data = { ...node.data, found_in_search: true };
-                        console.log("  Updated existing node as search hit:", node);
-                    }
-                }
-
-            // Mark ancestors as expanded
-            if (index < pathIds.length - 1) {
-                expandedNodeKeys.value[id] = true;
-            }
-
-            currentLevel = node.children = node.children || [];
-            console.log("  currentLevel after update:", currentLevel);
-            });
-        });
-    }
 
     // ------------------------------------------------------------
     // EXPORT
@@ -229,6 +418,7 @@ export function useTreeSearch() {
         errorMessage,
         onNodeExpand,
         resetTree,
+        clearTreeState,
 
         // search
         autoSelect,
@@ -237,257 +427,9 @@ export function useTreeSearch() {
         searchSystemsOptions,
         addSearchTerm,
         removeSearchTerm,
-        runSearch
+        fetchSpecificNodes,
+        runSearch,
+        fetchSearchStrategy,
+        saveSearchStrategy
     }
 }
-
-
-// const runSearch = async () => {
-//   // Build payload for the simplified backend
-//   const payload = {
-//     searches: searchInputs.value
-//       .filter(input => input.text.trim()) // ignore completely empty inputs
-//       .map(input => ({
-//         text: input.text.trim(),
-//         regex: input.regex,
-//         columns: input.columns,        // e.g., ["code", "description"]
-//         system_ids: input.system_ids   // e.g., [1, 2]
-//       })),
-//     limit: 100
-//   };
-//
-//   console.log('Payload:', payload);
-//
-//   if (payload.searches.length === 0) {
-//     toast.add({
-//       severity: 'warn',
-//       summary: 'No Search Input',
-//       detail: 'Please enter at least one search term.',
-//       life: 4000
-//     });
-//     return;
-//   }
-//
-//   // Format a user-friendly string for toast
-//   const getSystemNames = (ids) =>
-//     ids.map(id => searchSystemsOptions.value.find(s => s.id === id)?.name || id).join(', ');
-//
-//   const getColumnLabels = (values) =>
-//     values.map(val => searchInOptions.value.find(c => c.value === val)?.label || val).join(', ');
-//
-//   const formattedTerms = payload.searches
-//     .map((input, i) => {
-//       const regex = input.regex ? ' [regex]' : '';
-//       const systems = input.system_ids.length ? ` [systems: ${getSystemNames(input.system_ids)}]` : '';
-//       const columns = input.columns.length ? ` [columns: ${getColumnLabels(input.columns)}]` : '';
-//       return `${i + 1}: "${input.text}"${regex}${systems}${columns}`;
-//     })
-//     .join('\n');
-//
-//   toast.add({
-//     severity: 'info',
-//     summary: 'Search in Progress',
-//     detail: formattedTerms,
-//     life: 5000
-//   });
-//
-//   try {
-//     // Send payload in POST body
-//     const res = await apiClient.post('/api/search-nodes', payload);
-//     console.log('Search results:', res.data);
-//
-//     mergeSearchNodesIntoTree({
-//       results: res.data.results,
-//       ancestor_map: res.data.ancestor_map,
-//       treeNodes: nodes.value,
-//       expandedKeys: expandedNodeKeys
-//     });
-//
-//     toast.add({
-//       severity: 'success',
-//       summary: 'Search Successful',
-//       detail: `${res.data.results.length} items retrieved from server.`,
-//       life: 5000,
-//     });
-//
-//   } catch (err) {
-//     console.error('Search failed', err);
-//     toast.add({
-//       severity: 'error',
-//       summary: 'Search Failed',
-//       detail: err?.response?.data?.detail || 'Server error occurred.',
-//       life: 5000,
-//     });
-//   }
-// };
-//
-
-//
-// const nameError = ref(false)
-// function flashNameError() {
-//   nameError.value = true
-//   setTimeout(() => {
-//     nameError.value = false
-//   }, 1200) // highlight for 1.2 seconds
-// }
-//
-// const phenotype = reactive({
-//   id: "",
-//   name: "",
-//   description: "",
-//   selectedMetric: null,
-//   filters: [],
-//   config: {},
-//   created_at: null,
-// })
-//
-// //define save things
-// const saveOptions = [
-//   {
-//     label: 'Save',
-//     icon: 'pi pi-save',
-//     command: () => save('save')
-//   },
-//   {
-//     label: 'Update',
-//     icon: 'pi pi-refresh',
-//     command: () => save('update')
-//   }
-// ];
-//
-// function mainSaveClick(event) {
-//   // event is the PointerEvent, ignore it
-//   save('save');
-// }
-//
-// async function save() {
-//   if (!user.value) {
-//     toast.add({
-//       severity: 'warn',
-//       summary: 'Not logged in',
-//       detail: 'Please log in to save a phenotype.',
-//       life: 3000
-//     })
-//     return
-//   }
-//
-//   // Check global phenotype name
-//   console.log('phenotype name:', JSON.stringify(phenotype.name));
-//   if (!phenotype.name || phenotype.name.trim() === '') {
-//     flashNameError()
-//     toast.add({
-//       severity: 'warn',
-//       summary: 'Missing name',
-//       detail: 'Please give this phenotype a name before saving.',
-//       life: 3000
-//     })
-//     return
-//   }
-//
-//   try {
-//     const payload = {
-//       user_id: user.value.id,
-//       project_id: project.value.id,
-//       name: phenotype.name.trim(),
-//       // Later: add full phenotype JSON here
-//       // data: phenotype
-//     }
-//
-//     const { data, error } = await useSupabase
-//       .from('phenotypes')
-//       .insert(payload)
-//       .select()
-//
-//     if (error) {
-//       if (error.code === '23505') {
-//         flashNameError()
-//         toast.add({
-//           severity: 'error',
-//           summary: 'Name taken',
-//           detail: `A phenotype named "${phenotype.name}" already exists.`,
-//           life: 3000
-//         })
-//         return
-//       }
-//       throw error
-//     }
-//
-//     const row = data[0]
-//     savedPhenotypes.value.push(row)
-//     phenotype.id  = row.id
-//
-//     toast.add({
-//       severity: 'success',
-//       summary: 'Saved',
-//       detail: `Phenotype "${row.name}" saved successfully.`,
-//       life: 3000
-//     })
-//
-//   } catch (err) {
-//     console.error('Saving phenotype failed', err)
-//     toast.add({
-//       severity: 'error',
-//       summary: 'Error',
-//       detail: `Failed to save phenotype: ${err.message || err}`,
-//       life: 4000
-//     })
-//   }
-// }
-//
-// const confirm = useConfirm();
-// function confirmDelete(event) {
-//   console.log("foo")
-//   if (!phenotype?.name) return
-//
-//   confirm.require({
-//     target: event.currentTarget,
-//     message: `Are you sure you want to delete "${phenotype.name}"?`,
-//     icon: 'pi pi-exclamation-triangle',
-//     acceptLabel: 'Yes',
-//     rejectLabel: 'No',
-//     accept: async () => {
-//       if (!phenotype?.id) {
-//         toast.add({
-//           severity: 'warn',
-//           summary: 'Cannot delete',
-//           detail: 'Phenotype has not been saved yet',
-//           life: 3000
-//         });
-//         return;
-//       }
-//
-//       try {
-//         const { error } = await useSupabase
-//           .from('phenotypes')
-//           .delete()
-//           .eq('id', phenotype.id);
-//
-//         if (error) throw error;
-//
-//         savedPhenotypes.value = savedPhenotypes.value.filter(
-//           p => p.id !== phenotype.id
-//         );
-//
-//         phenotype.id = ''
-//         phenotype.name = ''
-//         phenotype.description = ""
-//         phenotype.selectedMetric = null
-//         phenotype.filters = []
-//         phenotype.config = {}
-//         phenotype.created_at = null
-//
-//       } catch (err) {
-//         console.error('Delete failed', err);
-//         toast.add({
-//           severity: 'error',
-//           summary: 'Delete failed',
-//           detail: err.message || err,
-//           life: 3000
-//         });
-//       }
-//     },
-//     reject: () => {
-//       console.log('Delete cancelled')
-//     }
-//   })
-// }

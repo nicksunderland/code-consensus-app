@@ -60,9 +60,9 @@ export function usePhenotypes() {
             return;
         }
         const projectId = projects.currentProject.value.id
-        console.log("fetchPhenotypes for projectId:", projectId)
+        // console.log("fetchPhenotypes for projectId:", projectId)
         if (!projectId) return;
-        console.log("projectID:", projectId)
+        // console.log("projectID:", projectId)
 
         loading.value = true
 
@@ -110,7 +110,7 @@ export function usePhenotypes() {
             ? pheno.name.trim()
             : String(pheno.name || "").trim();
 
-        console.log("savePhenotype:", pheno, "update:", update)
+        // console.log("savePhenotype:", pheno, "update:", update)
 
         if (!phenoName) {
             flashNameError()
@@ -160,7 +160,7 @@ export function usePhenotypes() {
             .select()
             .single()
 
-        console.log("savePhenotype data:", data, "error:", error)
+        // console.log("savePhenotype data:", data, "error:", error)
 
         if (error) {
             if (error.code === "23505") {

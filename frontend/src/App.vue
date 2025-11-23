@@ -31,17 +31,16 @@ import {useCodeSelection} from "@/composables/useCodeSelection.js";
 const toast = useToast()
 const notifications = useNotifications()
 notifications.setErrorHandler((summary, error) => {
-    toast.add({ severity: 'error', summary, detail: error?.message || String(error) })
+    toast.add({ severity: 'error', summary, detail: error?.message || String(error), life: 20000 })
 })
 notifications.setSuccessHandler((summary, detail) => {
-    toast.add({ severity: 'success', summary, detail })
+    toast.add({ severity: 'success', summary, detail, life: 20000 })
 })
 
 //testing delete later
 const phenotypes = usePhenotypes()
 const projects = useProjects()
 const tree = useTreeSearch()
-const codeSelection = useCodeSelection()
 //
 
 // THINGS FROM COMPOSABLES ---
@@ -50,34 +49,43 @@ const { menuItems } = useMenu()
 const { fetchProjects, emptyProjects } = useProjects()
 const { fetchPhenotypes, emptyPhenotypes } = usePhenotypes()
 const { isAnalysisActive } = useAnalysis();
-const activeTabs = ref(['0', '1']);
+const { clearTreeState } = useTreeSearch();
+const { clearSelectionState } = useCodeSelection();
 
 // --- WATCH USER LOGIN ---
 watch(
   user,
   async (newUser) => {
-    console.log("watching user in App.vue")
+    // console.log("watching user in App.vue")
     if (newUser) {
-      console.log("user valid - fetching")
+      // console.log("user valid - fetching")
       await fetchProjects()
       await fetchPhenotypes()
     } else {
-      console.log("user invalid - emptying")
+      // console.log("user invalid - emptying")
       emptyProjects()
       emptyPhenotypes()
+      clearTreeState()
+      clearSelectionState()
     }
   },
   { immediate: true } // also runs immediately if user is already logged in
 )
+
+const TAB_INDEXES = {
+    PHENOTYPE_DEFINITION: '0',
+    SEARCH: '1',
+    DIAGNOSTICS: '2',
+    REVIEW: '3',
+    DOWNLOAD: '4'
+};
+const activeTabs = ref(['0', '1']);
+
 // --- WATCH TABS ---
 watch(activeTabs, (newTabs) => {
-  console.log("newTabs:", newTabs);
   const currentTabs = newTabs || [];
-  const isDiagnosticsOpen = currentTabs.some(t => String(t) === '2');
-  isAnalysisActive.value = isDiagnosticsOpen;
-  console.log("Diagnostics Panel Open:", isDiagnosticsOpen);
+  isAnalysisActive.value = currentTabs.includes(TAB_INDEXES.DIAGNOSTICS);
 }, { immediate: true, deep: true });
-
 
 </script>
 

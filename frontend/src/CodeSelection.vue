@@ -122,7 +122,7 @@ const isProjectOwner = computed(() => {
                 v-if="isReviewMode"
                 label="Save Consensus Selections"
                 icon="pi pi-save"
-                @click="saveSelections"
+                @click="saveConsensus"
                 style="font-size: 0.75rem; padding: 0.5rem 0.5rem; "
               />
 

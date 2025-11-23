@@ -19,9 +19,7 @@ export function useAuth() {
 
     // Helper functions to manipulate dialog
     function openLogin() {
-        console.log("currentDialog.value =", currentDialog.value);
         currentDialog.value = 'login'
-        console.log("currentDialog.value =", currentDialog.value);
     }
 
     function openSignup() {
@@ -68,6 +66,7 @@ export function useAuth() {
             emitError('Signup Failed', error)
             return false
         }
+        emitSuccess('Check your email', 'Please verify your email address to complete the signup process.')
         return true
 
     }
@@ -89,6 +88,22 @@ export function useAuth() {
         if (error) emitError('Logout Failed', error)
     }
 
+    async function getUserId(email) {
+        const trimmedEmail = email.trim();
+        const { data, error } = await supabase
+            .from('user_profiles')
+            .select('user_id')
+            .eq('email', trimmedEmail)
+            .single();
+
+        if (error) {
+            console.error('Error fetching user ID:', error);
+            return null;
+        }
+
+        return data.user_id;
+    }
+
     return {
         // state
         user,
@@ -104,6 +119,7 @@ export function useAuth() {
         loginGitHub,
         loginEmailPassword,
         loginMagicLink,
-        logout
+        logout,
+        getUserId
     }
 }

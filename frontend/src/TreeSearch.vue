@@ -55,9 +55,9 @@ const removeAllCodes = (event) => {
 
 // --- Load tree on component mount ---
 onMounted(async () => {
-    console.log("in onMounted TreeSearch.vue:", nodes)
+    // console.log("in onMounted TreeSearch.vue:", nodes)
     addSearchTerm()
-    console.log("in onMounted TreeSearch.vue:", searchInputs)
+    // console.log("in onMounted TreeSearch.vue:", searchInputs)
     await onNodeExpand(null)
 
 
@@ -179,5 +179,38 @@ onMounted(async () => {
 <style scoped>
     padding-top: 0.15rem;    /* Optional: Compress vertical space further */
     padding-bottom: 0.15rem; /* Optional: Compress vertical space further */
+
+    .regex-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem; /* Adjust spacing between items */
+      margin-bottom: 0.5rem;
+    }
+
+    /* 1. The Text Input: Takes up all remaining space */
+    .search-line-input {
+      flex: 1;
+      min-width: 0; /* Prevents overflow issues */
+    }
+
+    /* 2. The Dropdowns: Fixed width */
+    .search-column {
+      /* flex: grow shrink basis */
+      flex: 0 0 12rem; /* Adjust '12rem' to your preferred width */
+      width: 12rem;    /* Fallback/Force width */
+    }
+
+    . search-systems {
+      /* flex: grow shrink basis */
+      flex: 0 0 5rem;
+      width: 5rem;
+    }
+
+    /* 3. The Toggle and Buttons: Only take as much space as they need */
+    .search-use-regex,
+    .p-button {
+      flex: 0 0 auto;
+    }
+
 
 </style>

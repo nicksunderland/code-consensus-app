@@ -2,7 +2,6 @@ import { ref, reactive } from 'vue'
 import { supabase } from '@/composables/useSupabase'
 import { useAuth } from '@/composables/useAuth.js'
 import { useNotifications } from './useNotifications'
-import { usePhenotypes } from "@/composables/usePhenotypes.js";
 
 // globals - these are set once in memory
 /**
@@ -61,7 +60,7 @@ export function useProjects() {
         projectForm.member_emails = currentProject.value.project_members.map(m => m.email)
         projectForm.member_ids = currentProject.value.project_members.map(m => m.user_id)
         projectForm.member_roles = currentProject.value.project_members.map(m => m.role)
-        console.log(projectForm)
+        // console.log(projectForm)
         isEditing.value = true
         showProjectDialog.value = true
     }
@@ -81,6 +80,19 @@ export function useProjects() {
             return null
         }
 
+        // resolve emails to IDs
+        const emailList = projectForm.member_emails || [];
+        const idPromises = emailList.map(email => auth.getUserId(email));
+        const resolvedIds = await Promise.all(idPromises);
+        const invalidEmails = emailList.filter((_, index) => !resolvedIds[index]);
+
+        // stop if there are invalid emails
+        if (invalidEmails.length > 0) {
+            const errorMsg = `The following emails are not registered users: ${invalidEmails.join(', ')}. Remove them and try again.`;
+            emitError('Member Lookup Failed', errorMsg);
+            return null;
+        }
+        projectForm.member_ids = resolvedIds;
 
         try {
             let data
@@ -88,6 +100,8 @@ export function useProjects() {
             // UPDATE EXISTING PROJECT
             // ---------------------------------------------------
             if (update && currentProject.value) {
+
+                // console.log('Updating project with form data:', projectForm);
 
                 const res = await supabase
                     .from('projects')
@@ -99,13 +113,23 @@ export function useProjects() {
                     .select()
                     .single()
 
-                if (res.error) return emitError('Failed to update project', res.error)
+                // console.log('Pre-save project:', res);
+
+                if (res.error) return emitError('Failed to fetch project data', res.error)
                 data = res.data
 
-                // --- delete removed members ---
+                // --- add/delete members ---
                 const currentMemberIds = currentProject.value.project_members.map(m => m.user_id)
-                const formMemberIds = projectForm.member_ids
+                // console.log('Current member IDs:', currentMemberIds)
+
+                const formMemberIds = projectForm.member_ids;
+                // console.log('Form member IDs:', formMemberIds)
+
                 const toDelete = currentMemberIds.filter(id => !formMemberIds.includes(id))
+                // console.log('Member IDs to delete:', toDelete)
+
+                const toAdd = formMemberIds.filter(id => !currentMemberIds.includes(id))
+                // console.log('Member IDs to add:', toAdd)
 
                 if (toDelete.length) {
                     const { error: delError } = await supabase
@@ -113,31 +137,62 @@ export function useProjects() {
                         .delete()
                         .eq('project_id', currentProject.value.id)
                         .in('user_id', toDelete)
-
                     if (delError) return emitError('Failed to remove members', delError)
                 }
 
+                if (toAdd.length) {
+                    const insertData = toAdd.map(user_id => ({
+                        project_id: currentProject.value.id,
+                        user_id,
+                        role: 'member'
+                    }))
+                    const { error: addError } = await supabase
+                        .from('project_members')
+                        .insert(insertData)
+                    if (addError) return emitError('Failed to add members', 'ensure the emails are associated with user accounts.')
+                }
+
                 // Fetch updated members from DB so project_members is always present
-                const { data: fullProject } = await supabase
+                const { data: updatedProject, error: updatedProjectError } = await supabase
                     .from('projects')
                     .select(`
                         id,
                         name,
                         description,
                         owner,
-                        project_members(user_id, role, email:user_profiles(email))
+                        project_members(
+                            user_id, 
+                            role, 
+                            email:user_profiles(
+                                email
+                            )
+                        )
                     `)
                     .eq('id', currentProject.value.id)
                     .single()
 
-                if (!fullProject) return emitError('Failed to fetch updated project', {})
+                // console.log('Fetched post-save project:', updatedProject);
 
-                data = fullProject
+                if (updatedProjectError) return emitError('Failed to fetch updated project', updatedProjectError)
+
+                // flatten returned data for local project
+                updatedProject.project_members = updatedProject.project_members.map(pm => {
+                    const emailObj = pm.email;
+                    return {
+                        ...pm,
+                        // Flatten 'user_profiles: { email: "..." }' to just 'email: "..."'
+                        email: emailObj ? emailObj.email : null
+                    };
+                });
+
+                data = updatedProject
 
                 // --- update local state ---
                 const index = projects.value.findIndex(p => p.id === data.id)
                 if (index !== -1) projects.value[index] = data
                 currentProject.value = data
+
+                // console.log('Post-update local project:', currentProject.value);
 
                 emitSuccess('Project Updated', `Project "${data.name}" updated.`)
                 closeDialog()
@@ -200,7 +255,7 @@ export function useProjects() {
             }
 
             // Fetch full project with members after creation
-            const { data: fullProject } = await supabase
+            const { data: fullProject, error: fullProjectError } = await supabase
                 .from('projects')
                 .select(`
                     id,
@@ -212,7 +267,7 @@ export function useProjects() {
                 .eq('id', projectId)
                 .single()
 
-            if (!fullProject) return emitError('Failed to fetch new project', {})
+            if (!fullProjectError) return emitError('Failed to fetch new project', fullProjectError)
 
             // --- update client-side state NOW ---
             currentProject.value = fullProject
@@ -242,7 +297,7 @@ export function useProjects() {
                 name,
                 created_at,
                 owner,
-                project_members(user_id, role)
+                project_members!inner(user_id, role)
             `)
             .eq('project_members.user_id', auth.user.value.id)
             .order('created_at', { ascending: true })
@@ -251,7 +306,8 @@ export function useProjects() {
             console.error('Raw Supabase error:', error);
             return emitError('Failed to load projects', error)
         } else {
-            console.log('Raw Supabase fetchProjects:', data);
+            // console.log('User ID:', auth.user.value.id);
+            // console.log('Raw Supabase fetchProjects:', data);
         }
 
         projects.value = data
@@ -281,7 +337,7 @@ export function useProjects() {
         if (memberError) {
             return emitError('Failed to load members', memberError)
         } else {
-            console.log('Raw Supabase fetchMembers:', memberRows);
+            // console.log('Raw Supabase fetchMembers:', memberRows);
         }
 
         // If no members found

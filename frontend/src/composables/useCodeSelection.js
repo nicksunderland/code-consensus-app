@@ -10,7 +10,10 @@ import { useProjects } from "@/composables/useProjects.js";
 const {
     nodes,
     selectedNodeKeys,
-    searchNodeKeys
+    searchNodeKeys,
+    fetchSpecificNodes,
+    fetchSearchStrategy,
+    saveSearchStrategy
 } = useTreeSearch()
 
 // ---------------------------------------------
@@ -27,6 +30,8 @@ const tableRows = computed(() => {
         nodeArray.forEach(node => {
             const selected = !!selectedNodeKeys.value[node.key];
             const found = !!searchNodeKeys.value[node.key];
+            const consensusData = consensusState.value[node.key] || { selected: false, comment: '' };
+
             if (selected || found) {
                 rows.push({
                     key: node.key,
@@ -34,8 +39,8 @@ const tableRows = computed(() => {
                     selected: selected,
                     comment: userComments.value[node.key] || '',
                     // 2. CONSENSUS DATA (New)
-                    consensus_selected: null,
-                    consensus_comment: null,
+                    consensus_selected: consensusData.selected,
+                    consensus_comment: consensusData.comment,
                     // 3. METADATA
                     found: found,
                     code: node.data?.code || '',
@@ -64,7 +69,6 @@ export function useCodeSelection() {
     const { emitError, emitSuccess } = useNotifications()
     const { user } = useAuth()
     const { currentPhenotype } = usePhenotypes()
-    const { currentProject } = useProjects()
 
     // ------------------------------------------------------------
     // HELPERS
@@ -82,7 +86,6 @@ export function useCodeSelection() {
         }
         selectedNodeKeys.value = newKeys;
     };
-
 
     const updateConsensusSelection = (key, val) => {
         if (!consensusState.value[key]) consensusState.value[key] = { selected: false, comment: '' };
@@ -129,12 +132,23 @@ export function useCodeSelection() {
         selectedNodeKeys.value = newKeys;
     };
 
+    function clearSelectionState() {
+        userComments.value = {}
+        consensusState.value = {}
+        teamSelections.value = {}
+        projectMembers.value = []
+        isReviewMode.value = false
+        isSaving.value = false
+    }
+
+    // ------------------------------------------------------------
+    // SAVE/LOAD LOGIC
+    // ------------------------------------------------------------
     const saveSelections = async () => {
         // 1. Validation
-        const projectId = currentProject.value?.id;
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
-        if (!projectId || !phenotypeId || !userId) return;
+        if (!phenotypeId || !userId) return;
 
         isSaving.value = true;
 
@@ -142,7 +156,6 @@ export function useCodeSelection() {
             // 2. Prepare Payload (Direct mapping)
             // We send EVERYTHING in tableRows (selected OR commented OR found)
             const payload = tableRows.value.map(row => ({
-                project_id: projectId,
                 phenotype_id: phenotypeId,
                 user_id: user.value.id,
                 code_id: parseInt(row.key),
@@ -159,8 +172,11 @@ export function useCodeSelection() {
                 .from('user_code_selections')
                 .upsert(payload, {
                     // This matches the SQL PRIMARY KEY definition
-                    onConflict: 'project_id, phenotype_id, code_id, user_id'
+                    onConflict: 'phenotype_id, code_id, user_id'
                 });
+
+            // save search strategy as well
+            await saveSearchStrategy(phenotypeId);
 
             emitSuccess("Saved", `Updated ${payload.length} codes.`);
 
@@ -172,62 +188,101 @@ export function useCodeSelection() {
         }
     };
 
+    const fetchUserSelections = async () => {
+        const phenotypeId = currentPhenotype.value?.id;
+        const userId = user.value?.id;
+        if (!phenotypeId || !userId) return;
+
+        // A. Fetch User's Personal Selections
+        const userQuery = supabase
+            .from('user_code_selections')
+            .select('code_id, is_selected, comment, found_in_search')
+            .eq('phenotype_id', phenotypeId)
+            .eq('user_id', userId);
+
+        // B. Fetch Consensus (We need these nodes too)
+        const consensusQuery = supabase
+            .from('phenotype_consensus')
+            .select('code_id, comments')
+            .eq('phenotype_id', phenotypeId);
+
+        const [userRes, consensusRes] = await Promise.all([userQuery, consensusQuery]);
+
+        if (userRes.error) console.error(userRes.error);
+        if (consensusRes.error) console.error(consensusRes.error);
+
+        // 2. Prepare empty state objects
+        const restoredSelected = {};
+        const restoredSearch = {};
+        const restoredComments = {};
+
+        // Collect ALL IDs that need to be displayed (User + Consensus)
+        const allIdsToLoad = new Set();
+
+        // Process User Data
+        (userRes.data || []).forEach(row => {
+            allIdsToLoad.add(row.code_id); // Add to set
+
+            if (row.is_selected) restoredSelected[row.code_id] = true;
+            if (row.found_in_search) restoredSearch[row.code_id] = true;
+            if (row.comment) restoredComments[row.code_id] = row.comment;
+        });
+
+        // Process Consensus Data
+        const consensusMap = {};
+        (consensusRes.data || []).forEach(row => {
+            allIdsToLoad.add(row.code_id); // Add to set (handles items user didn't pick)
+            consensusMap[row.code_id] = {
+                selected: true,
+                comment: row.comments || ''
+            };
+        });
+
+        // --- 2. UPDATE GLOBALS ---
+        selectedNodeKeys.value = restoredSelected;
+        searchNodeKeys.value = restoredSearch;
+        userComments.value = restoredComments;
+        consensusState.value = consensusMap;
+
+        // --- 3. HYDRATE THE TREE (The Missing Piece) ---
+        // This fetches the actual Code/Description text for the table
+        if (allIdsToLoad.size > 0) {
+            await fetchSpecificNodes(Array.from(allIdsToLoad));
+        }
+    };
+
     const fetchTeamSelections = async () => {
-        console.log("Using FAKE DATA for Team Selections");
+        const phenotypeId = currentPhenotype.value?.id;
+        if (!phenotypeId) return;
 
+        // 1. Fetch all selections for this project/phenotype
+        const { data, error } = await supabase
+            .from('user_code_selections')
+            .select(`
+                code_id,
+                user_id,
+                is_selected,
+                comment,
+                email:user_profiles(
+                    email
+                )
+            `)
+            .eq('phenotype_id', phenotypeId);
 
-        // Simulate Network Delay
-        await new Promise(resolve => setTimeout(resolve, 500));
+        if (error) {
+            emitError("Error fetching team data", error.message);
+            console.error("Error fetching team data:", error);
+            return;
+        }
 
-        // ---------------------------------------------------------
-        // 1. FAKE DATA GENERATOR
-        // ---------------------------------------------------------
-        // NOTE: Change the 'code_id' values below to match IDs that
-        // actually exist in your current search results/table!
-        const fakeData = [
-            // --- User 1: Alice ---
-            {
-                code_id: 3674, // <--- UPDATE THIS ID to match a row in your table
-                user_id: 'user-alice-uuid',
-                is_selected: true,
-                comment: null,
-                user_profiles: { email: 'alice@example.com' }
-            },
-            {
-                code_id: 3686, // <--- UPDATE THIS ID
-                user_id: 'user-alice-uuid',
-                is_selected: true,
-                comment: "Primary inclusion criteria",
-                user_profiles: { email: 'alice@example.com' }
-            },
-
-            // --- User 2: Bob ---
-            {
-                code_id: 3674, // <--- UPDATE THIS ID (Alice and Bob both selected this)
-                user_id: 'user-bob-uuid',
-                is_selected: false,
-                comment: "Agreed, keeping this.",
-                user_profiles: { email: 'bob@test.org' }
-            },
-            {
-                code_id: 3686, // <--- UPDATE THIS ID
-                user_id: 'user-bob-uuid',
-                is_selected: false,
-                comment: "Need to discuss this one",
-                user_profiles: { email: 'bob@test.org' }
-            }
-        ];
-
-        // ---------------------------------------------------------
-        // 2. TRANSFORM LOGIC (Identical to your Real Logic)
-        // ---------------------------------------------------------
+        // TRANSFORM LOGIC
         const map = {};
         const membersSet = new Map();
 
-        fakeData.forEach(row => {
+        data.forEach(row => {
             const cId = row.code_id;
             const uId = row.user_id;
-            const email = row.user_profiles?.email || 'Unknown';
+            const email = row.email?.email || 'Unknown';
 
             // Add to Member List (for Column Headers)
             if (!membersSet.has(uId)) {
@@ -244,59 +299,6 @@ export function useCodeSelection() {
 
         teamSelections.value = map;
         projectMembers.value = Array.from(membersSet.values());
-
-
-        // console.log("fetchTeamSelections is currently disabled.");
-        // const projectId = currentProject.value?.id;
-        // const phenotypeId = currentPhenotype.value?.id;
-        // const userId = user.value?.id;
-        // if (!projectId || !phenotypeId || !userId) return;
-        //
-        // // 1. Fetch all selections for this project/phenotype
-        // // Note: You might need to join with user_profiles to get emails if auth.users is restricted
-        // const { data, error } = await supabase
-        //     .from('user_code_selections')
-        //     .select(`
-        //         code_id,
-        //         user_id,
-        //         is_selected,
-        //         comment,
-        //         user_profiles:user_id (email)
-        //     `)
-        //     .eq('project_id', projectId)
-        //     .eq('phenotype_id', phenotypeId);
-        //
-        // if (error) {
-        //     emitError("Error fetching team data", error.message);
-        //     console.error("Error fetching team data:", error);
-        //     return;
-        // }
-        //
-        // // 2. Transform into a Lookup Map
-        // // Structure: map[code_id][user_id] = { ...data }
-        // const map = {};
-        // const membersSet = new Map(); // Use Map to ensure unique users
-        //
-        // data.forEach(row => {
-        //     const cId = row.code_id;
-        //     const uId = row.user_id;
-        //     const email = row.user_profiles?.email || 'Unknown';
-        //
-        //     // Add to Member List (for Column Headers)
-        //     if (!membersSet.has(uId)) {
-        //         membersSet.set(uId, { id: uId, name: email });
-        //     }
-        //
-        //     // Add to Data Map
-        //     if (!map[cId]) map[cId] = {};
-        //     map[cId][uId] = {
-        //         selected: row.is_selected,
-        //         comment: row.comment
-        //     };
-        // });
-        //
-        // teamSelections.value = map;
-        // projectMembers.value = Array.from(membersSet.values());
     };
 
     // Helper to get data for the table cell
@@ -326,15 +328,13 @@ export function useCodeSelection() {
     };
 
     const fetchConsensus = async () => {
-        const projectId = currentProject.value?.id;
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
-        if (!projectId || !phenotypeId || !userId) return;
+        if (!phenotypeId || !userId) return;
 
         const { data, error } = await supabase
             .from('phenotype_consensus')
-            .select('code_id, final_comments') // implicit existence = selected
-            .eq('project_id', projectId)
+            .select('code_id, comments') // implicit existence = selected
             .eq('phenotype_id', phenotypeId);
 
         if (error) {
@@ -348,23 +348,26 @@ export function useCodeSelection() {
         data.forEach(row => {
             map[row.code_id] = {
                 selected: true, // If it's in this table, it is selected
-                comment: row.final_comments || ''
+                comment: row.comments || ''
             };
         });
+        // console.log("Fetched Consensus Data:", map);
         consensusState.value = map;
     };
 
     const saveConsensus = async (final = false) => {
+        // console.log("Using save Consensus", final);
         // finalRows should be the array of row objects from your table
         // e.g. tableRows.value.filter(r => r.selected)
-        const projectId = currentProject.value?.id;
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
-        if (!projectId || !phenotypeId || !userId) return;
+        if (!phenotypeId || !userId) return;
 
         isSaving.value = true;
 
+        // console.log("Table Rows:", tableRows.value);
         const finalRows = tableRows.value.filter(r => r.consensus_selected);
+        // console.log("Final Rows for Consensus:", finalRows);
 
         try {
             // 1. Clear previous consensus for this phenotype
@@ -377,13 +380,13 @@ export function useCodeSelection() {
             // 2. Prepare Payload
             // We map the UI table rows to the DB columns
             const payload = finalRows.map(row => ({
-                project_id: projectId,
                 phenotype_id: phenotypeId,
                 code_id: parseInt(row.key),
-                system_id: row.system_id,
-                comments: row.comment, // Or a specific consensus comment
+                comments: row.consensus_comment,
                 finalized_at: null
             }));
+
+            // console.log("Consensus Payload:", payload);
 
             if (payload.length === 0) return;
 
@@ -392,7 +395,7 @@ export function useCodeSelection() {
                 .from('phenotype_consensus')
                 .insert(payload);
 
-            if (error) emitSuccess("Consensus Saved", `Finalized ${payload.length} codes.`);
+            emitSuccess("Consensus Saved", `Finalized ${payload.length} codes.`);
 
         } catch (err) {
             console.error(err);
@@ -402,6 +405,8 @@ export function useCodeSelection() {
         }
     };
 
+
+
     const handleFinalise = async () => {
         console.log("Using finalise Team Selections");
 
@@ -410,6 +415,9 @@ export function useCodeSelection() {
         await new Promise(resolve => setTimeout(resolve, 500));
     };
 
+    // ------------------------------------------------------------
+    // COMPOSABLE WATCHERS
+    // ------------------------------------------------------------
     watch(isReviewMode, async (newValue) => {
       if (newValue) {
           // Parallel Fetch: Get Team data AND Current Consensus data
@@ -419,6 +427,23 @@ export function useCodeSelection() {
           ]);
       }
     });
+
+    watch(
+        () => currentPhenotype.value?.id,
+        async (newId) => {
+            if (newId) {
+                // Reset and Fetch
+                selectedNodeKeys.value = {};
+                searchNodeKeys.value = {}; // Reset highlights
+                userComments.value = {};
+
+                await fetchUserSelections(); // Restore checkmarks & highlights
+                await fetchConsensus();
+                await fetchSearchStrategy(newId); // restore search terms used
+            }
+        },
+        { immediate: true }
+    );
 
     // ------------------------------------------------------------
     // EXPORT
@@ -445,6 +470,7 @@ export function useCodeSelection() {
         updateConsensusSelection,
         updateConsensusComment,
         saveConsensus,
-        handleFinalise
+        handleFinalise,
+        clearSelectionState
     }
 }
