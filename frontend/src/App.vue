@@ -59,8 +59,10 @@ const { menuItems } = useMenu()
   <div class="card relative z-2">
     <Menubar :model="menuItems" appendTo="body" breakpoint="1200px">
       <template #start>
-         <div class="menubar-title flex align-items-center mr-3">
-           <span class="font-bold">Code Consensus</span>
+        <div class="menubar-title flex align-items-center mr-3">
+          <span class="font-bold">
+              <span style="color: black;">Code</span><span style="color: #0EA5E9;">Consensus</span>
+          </span>
         </div>
       </template>
       <template #item="{ item, props, hasSubmenu }">

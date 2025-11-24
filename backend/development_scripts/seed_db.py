@@ -357,6 +357,8 @@ CREATE TABLE public.phenotype_consensus (
 -- );
 
 
+
+
     """
     print("Please create the table using the SQL in the function docstring")
 

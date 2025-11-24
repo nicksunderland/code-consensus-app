@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
-import App from './components/App.vue'
+import App from './App.vue'
+import { createHead} from "@unhead/vue/server";
 
 // the page router
 import router from "@/router/index.js";
@@ -36,6 +37,7 @@ import '@vue-flow/minimap/dist/style.css'
 // create
 const app = createApp(App)
 const VCodeBlock = createVCodeBlock();
+const head = createHead();
 
 // use the PrimeVue library
 app.use(PrimeVue, {
@@ -54,6 +56,7 @@ app.use(PrimeVue, {
 app.use(router);
 app.use(ToastService);
 app.use(ConfirmationService);
+app.use(head);
 app.component('Toast', Toast);
 app.component('apexchart', VueApexCharts)
 app.component('VCodeBlock', VCodeBlock);
