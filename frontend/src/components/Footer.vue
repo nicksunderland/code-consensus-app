@@ -17,7 +17,7 @@
           </div>
           <div class="link-column social">
             <h4>Connect</h4>
-            <a href="https://github.com" target="_blank"><i class="pi pi-github"></i> GitHub</a>
+            <a href="https://github.com/nicksunderland/code-consensus-app" target="_blank"><i class="pi pi-github"></i> GitHub</a>
           </div>
         </div>
       </div>
