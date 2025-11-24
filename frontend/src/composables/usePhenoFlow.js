@@ -20,7 +20,7 @@ const {
     addEdges
 } = useVueFlow();
 
-export function useDerivedPhenotypes() {
+export function usePhenoFlow() {
 
     // --- Initialize Nodes (Same as before) ---
     if (flowNodes.value.length === 0) {

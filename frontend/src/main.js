@@ -1,5 +1,8 @@
 import { createApp } from 'vue'
-import App from './App.vue'
+import App from './components/App.vue'
+
+// the page router
+import router from "@/router/index.js";
 
 // primevue
 import PrimeVue from 'primevue/config';
@@ -48,8 +51,9 @@ app.use(PrimeVue, {
 });
 
 // use toast for notifications
+app.use(router);
 app.use(ToastService);
-app.use(ConfirmationService)
+app.use(ConfirmationService);
 app.component('Toast', Toast);
 app.component('apexchart', VueApexCharts)
 app.component('VCodeBlock', VCodeBlock);

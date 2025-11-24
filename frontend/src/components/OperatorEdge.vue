@@ -9,7 +9,7 @@ export default {
 import { computed } from 'vue';
 // IMPORT EdgeLabelRenderer here
 import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@vue-flow/core';
-import { useDerivedPhenotypes, OPERATORS } from "@/composables/useDerivedPhenotypes.js";
+import { usePhenoFlow, OPERATORS } from "@/composables/usePhenoFlow.js";
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -24,7 +24,7 @@ const props = defineProps({
   style: { type: Object, required: false },
 });
 
-const { updateEdgeOperator } = useDerivedPhenotypes();
+const { updateEdgeOperator } = usePhenoFlow();
 
 // Calculate the path and the label position (labelX, labelY)
 const edgePath = computed(() =>

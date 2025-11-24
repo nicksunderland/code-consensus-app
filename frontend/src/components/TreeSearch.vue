@@ -177,8 +177,6 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-    padding-top: 0.15rem;    /* Optional: Compress vertical space further */
-    padding-bottom: 0.15rem; /* Optional: Compress vertical space further */
 
     .regex-row {
       display: flex;
@@ -200,7 +198,7 @@ onMounted(async () => {
       width: 12rem;    /* Fallback/Force width */
     }
 
-    . search-systems {
+    .search-systems {
       /* flex: grow shrink basis */
       flex: 0 0 5rem;
       width: 5rem;
