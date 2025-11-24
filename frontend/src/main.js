@@ -19,6 +19,16 @@ import VueApexCharts from "vue3-apexcharts";
 // styles
 import "./style.css"
 
+// vue flow styles
+/* Vue Flow Core Styles */
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+
+/* Vue Flow Add-on Styles */
+import '@vue-flow/controls/dist/style.css'
+import '@vue-flow/minimap/dist/style.css'
+/* ----------------------- */
+
 
 // create
 const app = createApp(App)
