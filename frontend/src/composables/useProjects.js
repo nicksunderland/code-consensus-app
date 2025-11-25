@@ -76,7 +76,10 @@ export function useProjects() {
     // CREATE / UPDATE PROJECT
     // ---------------------------------------
     async function saveProject(update = false) {
-        if (!auth.user.value) return null
+        if (!auth.user.value) {
+            emitError('Not Authenticated', 'Please log in to save projects.')
+            return null
+        }
         if (!projectForm.name.trim()) {
             emitError('Missing Project Name', 'Please enter a name.')
             return null
@@ -269,11 +272,23 @@ export function useProjects() {
                 .eq('id', projectId)
                 .single()
 
-            if (!fullProjectError) return emitError('Failed to fetch new project', fullProjectError)
+            if (fullProjectError) return emitError('Failed to fetch new project', fullProjectError)
+
+            // flatten returned data for local project
+            fullProject.project_members = fullProject.project_members.map(pm => {
+                const emailObj = pm.email;
+                return {
+                    ...pm,
+                    // Flatten 'user_profiles: { email: "..." }' to just 'email: "..."'
+                    email: emailObj ? emailObj.email : null
+                };
+            });
 
             // --- update client-side state NOW ---
-            currentProject.value = fullProject
-            projects.value.push(fullProject)
+            currentProject.value = fullProject;
+            projects.value.push(fullProject);
+
+            // console.log('Newly created project:', currentProject.value);
 
             emitSuccess("Project Created", `Project "${data.name}" created.`)
             closeDialog()
@@ -376,7 +391,7 @@ export function useProjects() {
 
         const projectId = currentProject.value.id;
         const projectName = currentProject.value.name;
-        console.log("Deleting project:", currentProject.value);
+        // console.log("Deleting project:", currentProject.value);
 
         try {
             // Delete project from DB (cascades to project_members if FK has ON DELETE CASCADE)

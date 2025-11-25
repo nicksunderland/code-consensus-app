@@ -169,6 +169,7 @@ const deleteCheck = (event) => {
                       v-tooltip.top="{value: 'Phenotype name', showDelay: 300}"
                       type="text"
                       :invalid="nameError"
+                      :disabled="currentPhenotype.name!==''"
                   />
                   <label for="phenotype_name">Phenotype Name</label>
                 </FloatLabel>

@@ -104,7 +104,10 @@ export function usePhenotypes() {
   // CREATE OR UPDATE PHENOTYPE
   // ----------------------------
     async function savePhenotype(update = false) {
-        if (!auth.user.value) return
+        if (!auth.user.value) {
+            emitError("Not authenticated", "Please log in to save phenotypes.")
+            return
+        }
 
         const pheno = currentPhenotype.value;
         const phenoName = typeof pheno.name === "string"
