@@ -16,6 +16,8 @@ import OverlayBadge from 'primevue/overlaybadge';
 import {ref, computed} from "vue";
 import {useAuth} from "@/composables/useAuth.js";
 import {useProjects} from "@/composables/useProjects.js";
+import CodeImport from "@/components/CodeImport.vue";
+import {useCodeImport} from "@/composables/useCodeImport.js";
 
 // --- use composable ---
 const {
@@ -35,6 +37,14 @@ const {
   saveConsensus,
   unlockConsensus
 } = useCodeSelection()
+
+
+const {
+  showImportDialog,
+  openImportDialog,
+  closeImportDialog
+} = useCodeImport()
+
 
 // composables
 const confirm = useConfirm();
@@ -79,6 +89,7 @@ const isProjectOwner = computed(() => {
 
 <template>
   <ConfirmPopup />
+  <CodeImport />
   <Card>
     <template #content>
       <DataTable
@@ -103,6 +114,17 @@ const isProjectOwner = computed(() => {
                   onIcon="pi pi-eye-slash"
                   offIcon="pi pi-users"
                   style="font-size: 0.75rem; padding: 0.3rem 0.5rem;"
+              />
+
+              <!-- Import Button -->
+              <Button
+                v-if="!isReviewMode"
+                label="Import"
+                icon="pi pi-upload"
+                severity="secondary"
+                :disabled="isFinalized"
+                @click="openImportDialog"
+                style="font-size: 0.75rem; padding: 0.5rem 0.5rem;"
               />
 
               <Button

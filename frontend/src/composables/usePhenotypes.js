@@ -1,5 +1,4 @@
-// /src/composables/usePhenotypes.js
-import { ref, computed, reactive } from 'vue'
+import { ref } from 'vue'
 import { supabase } from '@/composables/useSupabase.js'
 import { useProjects } from "@/composables/useProjects.js";
 import { useAuth } from "@/composables/useAuth.js";
@@ -22,7 +21,9 @@ export function usePhenotypes() {
     // STATE
     // ----------------------------
     const loading = ref(false);
-    const nameError = ref(false)
+    const nameError = ref(false);
+    const isEditingExisting = ref(false);
+
     function flashNameError() {nameError.value = true
         setTimeout(() => nameError.value = false, 1200)
     }
@@ -98,6 +99,7 @@ export function usePhenotypes() {
         if (error) return emitError("Load failed", error.message)
 
         currentPhenotype.value = data
+        isEditingExisting.value = true
     }
 
   // ----------------------------
@@ -175,6 +177,7 @@ export function usePhenotypes() {
 
         currentPhenotype.value = data // update with returned data (e.g., new ID)
         phenotypes.value.unshift(data) // add to local list
+        isEditingExisting.value = true
         emitSuccess("Saved", `Phenotype "${data.name}" saved.`)
 
         return data;
@@ -209,6 +212,7 @@ export function usePhenotypes() {
 
     function clearPhenotype() {
         currentPhenotype.value = { ...emptyPhenotype }
+        isEditingExisting.value = false
     }
 
     return {
@@ -217,6 +221,7 @@ export function usePhenotypes() {
         currentPhenotype,
         loading,
         nameError,
+        isEditingExisting,
 
         // functions
         phenotypeExists,

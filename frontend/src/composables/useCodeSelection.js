@@ -154,7 +154,14 @@ export function useCodeSelection() {
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
         console.log("Saving selections for phenotype:", phenotypeId, "user:", userId);
-        if (!phenotypeId || !userId) return;
+        if (!userId) {
+            emitError("Save Failed", "Please log in to save your selections.");
+            return;
+        }
+        if (!phenotypeId) {
+            emitError("Save Failed", "No phenotype currently active.");
+            return;
+        }
 
         isSaving.value = true;
 
@@ -398,7 +405,17 @@ export function useCodeSelection() {
     };
 
     const saveConsensus = async (finalize = false) => {
+        const userId = user.value?.id;
         const phenotypeId = currentPhenotype.value?.id;
+        if (!userId) {
+            emitError("Save Failed", "Please log in to save your selections.");
+            return;
+        }
+        if (!phenotypeId) {
+            emitError("Save Failed", "No phenotype currently active.");
+            return;
+        }
+
         if (!phenotypeId) return;
 
         isSaving.value = true;

@@ -22,6 +22,7 @@ const {
     loadPhenotype,
     deletePhenotype,
     nameError,
+    isEditingExisting,
     phenotypeExists,
 } = usePhenotypes()
 
@@ -169,7 +170,7 @@ const deleteCheck = (event) => {
                       v-tooltip.top="{value: 'Phenotype name', showDelay: 300}"
                       type="text"
                       :invalid="nameError"
-                      :disabled="currentPhenotype.name!==''"
+                      :disabled="isEditingExisting"
                   />
                   <label for="phenotype_name">Phenotype Name</label>
                 </FloatLabel>
