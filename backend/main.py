@@ -212,7 +212,10 @@ async def search_nodes(request: SearchRequest):
 
         # Columns per search
         col_conditions = []
+        ALLOWED_COLUMNS = {'code', 'description'}
         for col in s.columns:
+            if col not in ALLOWED_COLUMNS:
+                raise HTTPException(status_code=400, detail=f"Invalid column: {col}")
             col_conditions.append(f"e.{col} {operator} :{param_name}")
 
         # System filter for this search

@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import {useCodeSystems} from "@/composables/useCodeSystems.js";
 import {supabase} from "@/composables/useSupabase.js";
 
@@ -7,11 +7,16 @@ const showImportDialog = ref(false)
 const importedData = ref([])
 
 // --- CONSTANTS ---
-const { codeSystems, loadCodeSystems } = useCodeSystems()
-await loadCodeSystems()
+
 
 
 export function useCodeImport() {
+    const { codeSystems, loadCodeSystems } = useCodeSystems()
+    // Initialize on first use
+    onMounted(async () => {
+        await loadCodeSystems()
+    })
+
     // --- LOCAL STATE ---
     const step = ref(1)
     const fileName = ref('')
