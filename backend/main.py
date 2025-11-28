@@ -180,6 +180,10 @@ class SearchRequest(BaseModel):
     limit: int = 100
 
 
+# Allowed columns for search to prevent SQL injection
+ALLOWED_SEARCH_COLUMNS = {"code", "description"}
+
+
 @app.post("/api/search-nodes")
 async def search_nodes(request: SearchRequest):
     """
@@ -188,6 +192,15 @@ async def search_nodes(request: SearchRequest):
     """
     if not request.searches:
         return {"results": [], "ancestor_map": {}}
+    
+    # Validate columns to prevent SQL injection
+    for search in request.searches:
+        for col in search.columns:
+            if col not in ALLOWED_SEARCH_COLUMNS:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid column: {col}. Allowed columns: {', '.join(ALLOWED_SEARCH_COLUMNS)}"
+                )
 
     # --- Step 1: Dynamically build the search query ---
     where_clauses = ["e.is_selectable = TRUE"]
