@@ -26,12 +26,19 @@ The Code Consensus App is a well-structured Vue 3 + FastAPI application for coll
 ### 1. Circular Dependency Risk in Composables
 
 **Problem**: Several composables import each other, creating potential circular dependency issues:
-- `useCodeSelection.js` imports `useTreeSearch.js`
-- `useTreeSearch.js` uses global state that could conflict with `useCodeSelection.js`
-- `useProjects.js` imports `useCodeSelection.js` and `useTreeSearch.js`
+
+**Specific Import Chain**:
+1. `useCodeSelection.js` (line 4): `import { useTreeSearch } from "@/composables/useTreeSearch.js"`
+2. `useProjects.js` (line 5-6): 
+   ```javascript
+   import { useCodeSelection } from "@/composables/useCodeSelection.js";
+   import { useTreeSearch } from "@/composables/useTreeSearch.js";
+   ```
+
+The issue is that `useCodeSelection.js` calls `useTreeSearch()` at module level (line 11-19), which means the tree state is instantiated before the selection composable can use it. If `useTreeSearch` ever imports from `useCodeSelection`, a circular dependency will occur.
 
 **Files Affected**:
-- `frontend/src/composables/useCodeSelection.js` (lines 4-8)
+- `frontend/src/composables/useCodeSelection.js` (lines 4, 11-19)
 - `frontend/src/composables/useProjects.js` (lines 5-6)
 
 **Recommendation**:
@@ -174,7 +181,15 @@ const BASE_URL = import.meta.env.DEV
 **Recommendation**: Use environment variables consistently:
 ```python
 # backend
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "").split(",")
+import os
+
+def get_allowed_origins():
+    origins_env = os.environ.get("ALLOWED_ORIGINS", "")
+    if not origins_env:
+        return []
+    return [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+
+ALLOWED_ORIGINS = get_allowed_origins()
 ```
 ```javascript
 // frontend
@@ -404,7 +419,7 @@ pip install pytest pytest-asyncio httpx
 
 | Priority | Issue | Effort | Impact |
 |----------|-------|--------|--------|
-| 🔴 HIGH | SQL column validation | Low | High |
+| ✅ DONE | SQL column validation | Low | High |
 | 🔴 HIGH | Fix top-level await | Low | Medium |
 | 🟡 MED | Split large composables | Medium | High |
 | 🟡 MED | Add error interceptors | Low | Medium |
@@ -418,7 +433,7 @@ pip install pytest pytest-asyncio httpx
 
 The Code Consensus App has a solid foundation with good architectural choices. The main areas for improvement are:
 
-1. **Security**: Add input validation for SQL column names
+1. **Security**: ✅ Input validation for SQL column names has been added
 2. **Maintainability**: Split large composables into focused modules
 3. **Reliability**: Fix the top-level await and improve watcher patterns
 4. **Quality**: Add testing infrastructure and TypeScript

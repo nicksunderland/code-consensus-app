@@ -199,7 +199,7 @@ async def search_nodes(request: SearchRequest):
             if col not in ALLOWED_SEARCH_COLUMNS:
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Invalid column: {col}. Allowed columns: {', '.join(ALLOWED_SEARCH_COLUMNS)}"
+                    detail="Invalid column name specified in search"
                 )
 
     # --- Step 1: Dynamically build the search query ---
