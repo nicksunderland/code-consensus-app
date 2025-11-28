@@ -69,8 +69,23 @@ const steps = ref([
             'Add <strong>Comments</strong> for each code as required.'
         ]
     },
-    {
+  {
         id: 'step-5',
+        title: 'Code Upload',
+        subtitle: 'Additional Codes',
+        icon: 'pi pi-code',
+        content: `You can upload additional codes from external sources to supplement the candidate list. The only requirement is that the file contains columns with 1) codes, 2) the coding system, and 3) a code description.`,
+        bullets: [
+            'Navigate to the <strong>Review</strong> tab.',
+            'Click the <strong>Import</strong> button.',
+            'Chose a TSV, CSV, TXT, or Excel file with the required columns.',
+            'Map the columns to the required fields in the upload dialog.',
+            'Map the coding systems to those present in the database, or click <strong>Use file value</strong> to keep your original system coding.',
+            'Click <strong>Import</strong> for each code as required.'
+        ]
+    },
+    {
+        id: 'step-6',
         title: 'Diagnostics',
         subtitle: 'Data Validation',
         icon: 'pi pi-chart-bar',
@@ -82,7 +97,7 @@ const steps = ref([
         ]
     },
   {
-        id: 'step-6',
+        id: 'step-7',
         title: 'Consensus',
         subtitle: 'Expert consensus',
         icon: 'pi pi-users',
@@ -94,7 +109,7 @@ const steps = ref([
         ]
     },
     {
-        id: 'step-7',
+        id: 'step-8',
         title: 'Download & Export',
         subtitle: 'Reproducible Science',
         icon: 'pi pi-download',
