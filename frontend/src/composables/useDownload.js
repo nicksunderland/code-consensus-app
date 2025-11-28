@@ -31,10 +31,12 @@ export function useDownload() {
         if (rawData.value?.metadata?.id === phenotypeId) return
 
         isGenerating.value = true
-        rawData.value = null // Reset while loading
+        rawData.value = null
 
         try {
-            // 1. Fetch Phenotype Metadata
+            // -------------------------------
+            // 1. Fetch phenotype metadata
+            // -------------------------------
             const { data: pheno, error: phenoError } = await supabase
                 .from('phenotypes')
                 .select(`
@@ -49,54 +51,146 @@ export function useDownload() {
                 return
             }
 
-            // 2. Fetch Selected Codes
-            const { data: codes, error: codesError } = await supabase
+            // -------------------------------
+            // 2. Fetch selected consensus codes
+            // -------------------------------
+            const { data: consensus, error: consensusError } = await supabase
                 .from('phenotype_consensus')
                 .select(`
-                    finalized_at,
+                    id,
+                    code_id,
+                    orphan_id,
                     comments,
+                    finalized_at,
                     code:codes (
-                        code, description,
+                        code,
+                        description,
                         system:code_systems(name, version, description, url)
                     )
                 `)
                 .eq('phenotype_id', phenotypeId)
 
-            if (codesError) {
-                emitError("Export Failed", "Could not retrieve phenotype codes.")
+            if (consensusError) {
+                emitError("Export Failed", "Could not retrieve phenotype consensus codes.")
                 return
             }
 
-            // --- 3. EXTRACT UNIQUE CODE SYSTEMS ---
-            // Create a Map to store unique system+version combinations
+            // -------------------------------
+            // 3. Gather orphan IDs
+            // -------------------------------
+            const orphanIds = consensus
+                .filter(r => r.orphan_id)
+                .map(r => r.orphan_id)
+
+            let orphanMap = new Map()
+
+            if (orphanIds.length > 0) {
+                const { data: orphans, error: orphanError } = await supabase
+                    .from('user_code_selections_orphan')
+                    .select(`
+                        orphan_id,
+                        code,
+                        description,
+                        system_name,
+                        comment
+                    `)
+                    .in('orphan_id', orphanIds)
+
+                if (orphanError) {
+                    emitError("Export Failed", "Unable to load orphan codes.")
+                    return
+                }
+
+                orphans.forEach(o => orphanMap.set(o.orphan_id, o))
+            }
+
+            // --------------------------------------------
+            // 4. Load all system metadata for orphan linking
+            // --------------------------------------------
+            const { data: allSystems } = await supabase
+                .from("code_systems")
+                .select("name, version, description, url")
+
+            const systemLookup = new Map()
+            allSystems?.forEach(sys => systemLookup.set(sys.name, sys))
+
+            // --------------------------------------------
+            // 5. Merge consensus rows into unified structure
+            // --------------------------------------------
+            const mergedCodes = consensus.map(row => {
+                // Normal code
+                if (row.code_id && row.code) {
+                    return {
+                        code: row.code.code,
+                        description: row.code.description,
+                        system: row.code.system?.name,
+                        system_version: row.code.system?.version,
+                        system_description: row.code.system?.description,
+                        system_url: row.code.system?.url,
+                        consensus_comments: row.comments,
+                        finalized_at: row.finalized_at,
+                        is_orphan: false
+                    }
+                }
+
+                // Orphan code
+                if (row.orphan_id) {
+                    const o = orphanMap.get(row.orphan_id)
+                    if (!o) return null
+
+                    // Use real system if exists
+                    const sys = systemLookup.get(o.system_name)
+
+                    return {
+                        code: o.code,
+                        description: o.description,
+                        system: o.system_name || "Custom",
+                        system_version: sys?.version || "N/A",
+                        system_description:
+                            sys?.description || "User-submitted custom code",
+                        system_url: sys?.url || "",
+                        consensus_comments: o.comment || row.comments,
+                        finalized_at: row.finalized_at,
+                        is_orphan: true
+                    }
+                }
+
+                return null
+            }).filter(Boolean)
+
+            // --------------------------------------------
+            // 6. Extract unique system definitions
+            // --------------------------------------------
             const systemMap = new Map()
 
-            codes.forEach(c => {
-                const s = c.code?.system
-                if (s) {
-                    // Unique Key: Name + Version
-                    const key = `${s.name}-${s.version}`
+            mergedCodes.forEach(c => {
+                const name = c.system || "Custom"
+                const version = c.system_version || "N/A"
+                const key = `${name}-${version}`
 
-                    if (!systemMap.has(key)) {
-                        systemMap.set(key, {
-                            name: s.name,
-                            version: s.version,
-                            description: s.description || "", // <--- NEW
-                            url: s.url || ""                  // <--- NEW
-                        })
-                    }
+                if (!systemMap.has(key)) {
+                    systemMap.set(key, {
+                        name,
+                        version,
+                        description: c.system_description || "",
+                        url: c.system_url || ""
+                    })
                 }
             })
 
             const uniqueSystems = Array.from(systemMap.values())
 
-            // --- 4. DETERMINE FINALIZED STATUS ---
-            // Assuming bulk finalization: check the first code.
-            // If no codes exist, it's technically not finalized.
-            const finalizedDate = codes.length > 0 ? codes[0].finalized_at : null
+            // --------------------------------------------
+            // 7. Determine finalized status
+            // --------------------------------------------
+            const finalizedDate =
+                mergedCodes.length > 0 ? mergedCodes[0].finalized_at : null
+
             isPhenotypeFinalized.value = !!finalizedDate
 
-            // --- 5. STRUCTURE DATA ---
+            // --------------------------------------------
+            // 8. Build export data object
+            // --------------------------------------------
             rawData.value = {
                 metadata: {
                     id: phenotypeId,
@@ -106,20 +200,17 @@ export function useDownload() {
                     author: pheno.project?.owner?.email || "Unknown",
                     source: pheno.source || "N/A",
                     generated_at: new Date().toISOString(),
-                    finalized_at: finalizedDate || "WARNING: Codes are PRE-FINALIZED (Draft Status)",
-                    status: !!finalizedDate ? 'Finalized' : 'Draft'
+                    finalized_at:
+                        finalizedDate ||
+                        "WARNING: Codes are PRE-FINALIZED (Draft Status)",
+                    status: !!finalizedDate ? "Finalized" : "Draft"
                 },
                 code_systems: uniqueSystems,
                 stats: {
-                    total_codes: codes.length,
-                    systems: [...new Set(codes.map(c => c.code?.system?.name))].join(', ')
+                    total_codes: mergedCodes.length,
+                    systems: [...new Set(mergedCodes.map(c => c.system))].join(", ")
                 },
-                codes: codes.map(item => ({
-                    code: item.code?.code,
-                    system: item.code?.system?.name,
-                    description: item.code?.description,
-                    consensus_comments: item.comments
-                }))
+                codes: mergedCodes
             }
 
         } catch (err) {
@@ -129,6 +220,7 @@ export function useDownload() {
             isGenerating.value = false
         }
     }
+
 
     // --------------------------------------------------------
     // FORMATTERS

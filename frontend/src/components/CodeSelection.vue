@@ -5,6 +5,7 @@ import Column from 'primevue/column';
 import Checkbox from 'primevue/checkbox';
 import Textarea from "primevue/textarea";
 import Button from "primevue/button";
+import Tooltip from 'primevue/tooltip'
 import Tag from 'primevue/tag';
 import ToggleButton from 'primevue/togglebutton';
 import ConfirmPopup from 'primevue/confirmpopup';
@@ -18,6 +19,7 @@ import {useAuth} from "@/composables/useAuth.js";
 import {useProjects} from "@/composables/useProjects.js";
 import CodeImport from "@/components/CodeImport.vue";
 import {useCodeImport} from "@/composables/useCodeImport.js";
+import {usePhenotypes} from "@/composables/usePhenotypes.js";
 
 // --- use composable ---
 const {
@@ -28,6 +30,8 @@ const {
   isAllSelected,
   isIndeterminate,
   saveSelections,
+  hasUnsavedChanges,
+  hasUnsavedConsensusChanges,
   isReviewMode,
   isFinalized,
   projectMembers,
@@ -35,14 +39,13 @@ const {
   updateConsensusSelection,
   updateConsensusComment,
   saveConsensus,
-  unlockConsensus
+  unlockConsensus,
+  clearImportedCodes
 } = useCodeSelection()
 
 
 const {
-  showImportDialog,
   openImportDialog,
-  closeImportDialog
 } = useCodeImport()
 
 
@@ -50,6 +53,7 @@ const {
 const confirm = useConfirm();
 const { user } = useAuth();
 const { currentProject } = useProjects();
+const { currentPhenotype } = usePhenotypes();
 
 // --- methods ---
 const isVisibleDeselectAllCheck = ref(false);
@@ -80,6 +84,20 @@ const handleSelectAll = (event) => {
     }
   });
 }
+const confirmClearImported = (event) => {
+  confirm.require({
+    target: event.currentTarget,
+    message: 'This will permanently delete all your imported codes for this phenotype. Continue?',
+    header: 'Clear Imported Codes?',
+    icon: 'pi pi-exclamation-triangle',
+    acceptLabel: 'Clear All',
+    acceptClass: 'p-button-danger',
+    rejectLabel: 'Cancel',
+    accept: () => {
+      clearImportedCodes();
+    }
+  });
+};
 const isProjectOwner = computed(() => {
     if (!user.value || !currentProject.value) return false;
     return user.value.id === currentProject.value.owner;
@@ -122,8 +140,21 @@ const isProjectOwner = computed(() => {
                 label="Import"
                 icon="pi pi-upload"
                 severity="secondary"
-                :disabled="isFinalized"
+                :disabled="isFinalized || !currentPhenotype?.id"
+                v-tooltip.top="{ value: !currentPhenotype?.id ? 'Select a phenotype first' : 'Import codes', showDelay: 300 }"
                 @click="openImportDialog"
+                style="font-size: 0.75rem; padding: 0.5rem 0.5rem;"
+              />
+
+              <!-- Delete imported Button -->
+              <Button
+                v-if="!isReviewMode"
+                label="Remove Imported"
+                icon="pi pi-trash"
+                severity="danger"
+                outlined
+                :disabled="isFinalized"
+                @click="confirmClearImported"
                 style="font-size: 0.75rem; padding: 0.5rem 0.5rem;"
               />
 
@@ -135,6 +166,8 @@ const isProjectOwner = computed(() => {
                 :disabled="isFinalized"
                 @click="saveSelections"
                 style="font-size: 0.75rem; padding: 0.5rem 0.5rem;"
+                class="p-button-info"
+                :class="{ 'dirty-glow': hasUnsavedChanges }"
               />
 
               <div v-if="!isReviewMode" style="display: flex; align-items: center; gap: 0.5rem;">
@@ -178,6 +211,8 @@ const isProjectOwner = computed(() => {
                         icon="pi pi-save"
                         severity="secondary"
                         @click="saveConsensus(false)"
+                        class="p-button-primary"
+                        :class="{ 'dirty-glow': hasUnsavedConsensusChanges }"
                         style="font-size: 0.75rem; padding: 0.5rem 0.5rem;"
                       />
 
@@ -208,10 +243,29 @@ const isProjectOwner = computed(() => {
             </template>
         </Column>
 
-        <Column v-if="!isReviewMode" field="found" header="Search">
-             <template #body="{ data }">
-                <Tag :severity="data.found ? 'info' : 'secondary'" :value="data.found ? 'Yes' : 'No'" />
-             </template>
+        <Column v-if="!isReviewMode" field="found" header="Source">
+          <template #body="{ data }">
+            <div style="display: flex; flex-direction: column; gap: 2px;">
+              <Tag
+                v-if="data.imported"
+                severity="warn"
+                value="Import"
+                style="font-size: 0.7rem; padding: 2px 4px;"
+              />
+              <Tag
+                v-if="data.found"
+                severity="info"
+                value="Search"
+                style="font-size: 0.7rem; padding: 2px 4px;"
+              />
+              <Tag
+                v-if="!data.imported && !data.found"
+                severity="secondary"
+                value="Manual"
+                style="font-size: 0.7rem; padding: 2px 4px;"
+              />
+            </div>
+          </template>
         </Column>
 
         <Column field="system" header="System" />
@@ -382,4 +436,25 @@ const isProjectOwner = computed(() => {
     /* Hide text on very small screens if needed */
     white-space: nowrap;
 }
+
+.dirty-glow {
+    /* 1. Solid Green Base (Green-500) */
+    background-color: #22c55e !important;
+    border-color: #22c55e !important;
+    color: white !important;
+
+    /* 2. Subtle Green Glow */
+    /* Reduced blur (8px) and spread (2px) for a tighter, softer effect */
+    box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.6) !important;
+
+    transition: all 0.3s ease-in-out;
+}
+
+/* On hover, slightly increase brightness/glow to show interactivity */
+.dirty-glow:hover {
+     background-color: #16a34a !important; /* Green-600 */
+     box-shadow: 0 0 12px 3px rgba(34, 197, 94, 0.7) !important;
+}
+
+
 </style>

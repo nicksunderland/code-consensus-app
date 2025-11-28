@@ -27,7 +27,8 @@
     "prismjs": "^1.30.0",
     "vue": "^3.5.22",
     "vue-router": "^4.6.3",
-    "vue3-apexcharts": "^1.10.0"
+    "vue3-apexcharts": "^1.10.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",
