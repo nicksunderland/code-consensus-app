@@ -9,6 +9,7 @@ import Button from "primevue/button";
 import ToggleSwitch from "primevue/toggleswitch";
 import {useTreeSearch} from "@/composables/useTreeSearch.js";
 import {usePhenotypes} from "@/composables/usePhenotypes.js";
+import {useCodeSystems} from "@/composables/useCodeSystems.js";
 import ConfirmDialog from "primevue/confirmdialog";
 
 // --- use composable ---
@@ -32,6 +33,7 @@ const {
   savePhenotype,
   deletePhenotype
 } = usePhenotypes()
+
 
 
 // removing all selected nodes with confirmation
@@ -62,11 +64,6 @@ onMounted(async () => {
 
 
 
-    // Populate MultiSelect system options (map so overwrites)
-    // searchSystemsOptions.value = nodes.value.map(node => ({
-    //     id: node.data.system_id,
-    //     name: node.data.code
-    // }))
 })
 
 </script>
@@ -195,13 +192,13 @@ onMounted(async () => {
     .search-column {
       /* flex: grow shrink basis */
       flex: 0 0 12rem; /* Adjust '12rem' to your preferred width */
-      width: 12rem;    /* Fallback/Force width */
+      width: 13rem;    /* Fallback/Force width */
     }
 
     .search-systems {
       /* flex: grow shrink basis */
       flex: 0 0 5rem;
-      width: 5rem;
+      width: 20rem;
     }
 
     /* 3. The Toggle and Buttons: Only take as much space as they need */

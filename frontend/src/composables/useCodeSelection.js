@@ -14,7 +14,8 @@ const {
     searchNodeKeys,
     fetchSpecificNodes,
     fetchSearchStrategy,
-    saveSearchStrategy
+    saveSearchStrategy,
+    clearTreeState
 } = useTreeSearch()
 
 const {
@@ -313,18 +314,20 @@ export function useCodeSelection() {
         }
     };
 
+    // (The Skeleton): This builds the Table Rows.
     const fetchUserSelections = async () => {
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
         if (!phenotypeId || !userId) return;
 
         // Fetch data in parallel
-        const [userRes, orphanRes, searchRes, consensusRes] = await Promise.all([
-            // A. Known user selections
+        const [userRes, orphanRes, consensusRes] = await Promise.all([
+            // A. Known team selections
             supabase
                 .from('user_code_selections')
                 .select(`
                     code_id, 
+                    user_id,
                     is_selected, 
                     comment, 
                     found_in_search, 
@@ -336,30 +339,23 @@ export function useCodeSelection() {
                         system_details:code_systems(name)
                     )
                  `)
-                .eq('phenotype_id', phenotypeId)
-                .eq('user_id', userId),
-            // B. Orphan user selections
+                .eq('phenotype_id', phenotypeId),
+            // B. Orphan team selections
             supabase
                 .from('user_code_selections_orphan')
-                .select('orphan_id, code, description, is_selected, comment, system_name')
-                .eq('phenotype_id', phenotypeId)
-                .eq('user_id', userId),
-            // C. All codes ids found in search (for the tree)
-            supabase
-                .from('user_code_selections')
-                .select('code_id')
-                .eq('phenotype_id', phenotypeId)
-                .eq('found_in_search', true),
-            // D. Consensus
+                .select('orphan_id, user_id, code, description, is_selected, comment, system_name')
+                .eq('phenotype_id', phenotypeId),
+            // C. Consensus
             supabase
                 .from('phenotype_consensus')
                 .select('code_id, orphan_id, comments')
                 .eq('phenotype_id', phenotypeId),
         ]);
 
+        console.log("fetchUserSelections::responses", { userRes, orphanRes, consensusRes });
+
         if (userRes.error) console.error(userRes.error);
         if (consensusRes.error) console.error(consensusRes.error);
-        if (searchRes.error) console.error(searchRes.error);
         if (orphanRes.error) console.error(orphanRes.error);
 
         // 2. Prepare empty state objects
@@ -368,15 +364,10 @@ export function useCodeSelection() {
         const restoredComments = {};
         const allIdsToLoad = new Set();
         const consensusMap = {};
+        const processedImportKeys = new Set();
         importedData.value = [];
 
-        // 1️⃣ Global search results
-        (searchRes.data || []).forEach(row => {
-            allIdsToLoad.add(row.code_id);
-            restoredSearch[row.code_id] = true;
-        });
-
-        // 4️⃣ Consensus
+        // 3. PROCESS CONSENSUS
         (consensusRes.data || []).forEach(row => {
             const key = row.code_id ?? row.orphan_id;
             consensusMap[key] = {
@@ -385,15 +376,32 @@ export function useCodeSelection() {
             };
         });
 
-        // 2️⃣ Known user selections
+        // 4. PROCESS STANDARD CODES (Merged Logic)
         (userRes.data || []).forEach(row => {
+
+            // --- VISIBILITY (Global) ---
+            // If it exists in the DB for this phenotype, we want to ensure the Tree loads it
             allIdsToLoad.add(row.code_id);
-            if (row.is_selected) restoredSelected[row.code_id] = true;
-            if (row.comment) restoredComments[row.code_id] = row.comment;
-            // Add to importedData so tableRows can pick up imported flag
-            if (row.imported) {
+
+            // --- SEARCH STATE (Global) ---
+            // if found_in_search is true, mark it true to help the tree highlight these
+            if (row.found_in_search) {
+                restoredSearch[row.code_id] = true;
+            }
+
+            // --- SELECTION STATE (Personal) ---
+            // selected and comment for the currently logged-in user
+            if (row.user_id === userId) {
+                if (row.is_selected) restoredSelected[row.code_id] = true;
+                if (row.comment) restoredComments[row.code_id] = row.comment;
+            }
+
+            // --- IMPORTED DATA (Global) ---
+            // If ANYONE imported this, add to importedData (deduplicated)
+            if (row.imported && !processedImportKeys.has(row.code_id)) {
                 const details = row.code_details || {};
                 const systemInfo = details.system_details || {};
+
                 importedData.value.push({
                     key: row.code_id,
                     code: details.code,
@@ -402,53 +410,61 @@ export function useCodeSelection() {
                     system_id: details.system_id,
                     imported: true
                 });
+                processedImportKeys.add(row.code_id);
             }
-        });
 
-        // 3️⃣ Orphan codes
+        }); // end processing standard codes
+
+
+        // 5. PROCESS ORPHANS
         (orphanRes.data || []).forEach(row => {
-            if (row.is_selected) restoredSelected[row.orphan_id] = true;
-            if (row.comment) restoredComments[row.orphan_id] = row.comment;
-            importedData.value.push({
-                key: row.orphan_id,
-                code: row.code,
-                description: row.description,
-                system: row.system_name,
-                system_id: null,
-                imported: true,
-                consensus_selected: consensusMap[row.orphan_id]?.selected ?? false
-            });
-        });
+            // --- SELECTION STATE (Personal) ---
+            if (row.user_id === userId) {
+                if (row.is_selected) restoredSelected[row.orphan_id] = true;
+                if (row.comment) restoredComments[row.orphan_id] = row.comment;
+            }
 
-        // 5️⃣ Hydrate known codes from tree
+            // --- VISIBILITY (Global) ---
+            if (!processedImportKeys.has(row.orphan_id)) {
+                importedData.value.push({
+                    key: row.orphan_id,
+                    code: row.code,
+                    description: row.description,
+                    system: row.system_name,
+                    system_id: null,
+                    imported: true,
+                    consensus_selected: consensusMap[row.orphan_id]?.selected ?? false
+                });
+                processedImportKeys.add(row.orphan_id);
+            }
+        }); // end processing standard orphans
+
+        // 6. HYDRATE TREE
         // This fetches the actual Code/Description text for the table
         if (allIdsToLoad.size > 0) {
-            // This maps ID -> { found_in_search: boolean } could be other data later too...
-            // This is passed to fetchSpecificNodes to apply styling during creation
             const injectionMap = {};
             allIdsToLoad.forEach(id => {
                 injectionMap[id] = {
                     found_in_search: !!restoredSearch[id]
                 }
             });
-
             await fetchSpecificNodes(Array.from(allIdsToLoad), injectionMap);
         }
 
-        // 6️⃣ Update global state
+        // 7. UPDATE STATE
         selectedNodeKeys.value = restoredSelected;
         searchNodeKeys.value = restoredSearch;
         userComments.value = restoredComments;
         consensusState.value = consensusMap;
 
-        // ---> UPDATE DIRTY STATE TRACKER <---
-        // We wait for the next microtask/reactivity tick just to be safe that tableRows updated
+        // 8. UPDATE DIRTY STATE TRACKER
         setTimeout(() => {
             lastSavedSelectionHash.value = getSelectionHash();
             lastSavedConsensusHash.value = getConsensusHash();
         }, 0);
     };
 
+    // (The Decoration): This provides the Status/Icons inside the rows fetched by fetchUserSelections
     const fetchTeamSelections = async () => {
         const phenotypeId = currentPhenotype.value?.id;
         if (!phenotypeId) return;
@@ -702,7 +718,7 @@ export function useCodeSelection() {
             const totalImported = (orphanCheck.count || 0) + (importedCheck.count || 0);
 
             if (totalImported === 0) {
-                emitError("Nothing to Clear", "You have no imported codes for this phenotype.");
+                emitError("Nothing to Clear", "You have no imported codes for this phenotype (codes were imported by another group member).");
                 isSaving.value = false;
                 return;
             }
@@ -851,13 +867,22 @@ export function useCodeSelection() {
         watch(
             () => currentPhenotype.value?.id,
             async (newId) => {
+                // A. ALWAYS RESET FIRST
+                clearTreeState();
+                importedData.value = [];
+                clearSelectionState();
+
+                // B. IF NEW ID EXISTS, LOAD NEW DATA
                 if (newId) {
-                    clearSelectionState();
-                    await fetchUserSelections(); // Restore checkmarks & highlights
-                    await fetchConsensus();
-                    await fetchSearchStrategy(newId); // restore search terms used
-                } else {
-                    clearSelectionState();
+                    try {
+                        // Load Search Strategy for this new phenotype
+                        await fetchSearchStrategy(newId);
+                        // Load Selections
+                        await fetchUserSelections();
+                        await fetchConsensus();
+                    } catch (e) {
+                        console.error("Error loading phenotype data", e);
+                    }
                 }
             },
             { immediate: true }

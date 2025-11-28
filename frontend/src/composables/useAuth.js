@@ -84,8 +84,11 @@ export function useAuth() {
     }
 
     async function logout() {
-        const {error} = await supabase.auth.signOut()
-        if (error) emitError('Logout Failed', error)
+        const { error } = await supabase.auth.signOut()
+        if (error && error.message !== 'Auth session missing!') {
+            emitError('Logout Failed', error)
+        }
+        user.value = null
     }
 
     async function getUserId(email) {

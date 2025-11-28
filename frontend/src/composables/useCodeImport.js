@@ -283,54 +283,92 @@ export function useCodeImport() {
                 systemMap[s.name.toLowerCase()] = s
             })
 
-            const mappedData = []
+            const uniqueCodesToFetch = new Set()
+            const rowsToProcess = []
 
             for (const row of rawImportedData.value) {
                 const code = row[columnMapping.value.code]?.toString().trim()
+                if (!code) continue // Skip empty codes
+
                 let systemName = columnMapping.value.system ? row[columnMapping.value.system]?.toString().trim() : null
-                const description = columnMapping.value.description ? row[columnMapping.value.description] : null
 
-                // Skip empty codes
-                if (!code) continue
-
-                // Apply user mapping if available
+                // Apply mappings
                 if (systemName && systemMapping.value[systemName]) {
                     systemName = systemMapping.value[systemName]
                 }
 
-                // Determine if system is unmappable via UI checkbox
+                // Determine DB System ID
                 const isUnmappable = systemName && unmatchedSystems.value.includes(systemName)
-
-                // Lookup DB system only if not flagged as unmappable
                 const dbSystem = !isUnmappable ? systemMap[systemName?.toLowerCase()] || null : null
                 const system_id = dbSystem?.id || null
 
-                // Lookup existing code in DB (only if mapped to a known system)
-                let code_id = null
+                // If we have a valid system_id, we need to check if this code exists in DB
                 if (system_id) {
-                    const { data, error } = await supabase
-                        .from('codes')
-                        .select('id, system_id, code, description')
-                        .eq('system_id', system_id)
-                        .eq('code', code)
-                        .limit(1)
-                        .maybeSingle()
-
-                    if (error) console.error("Error fetching code:", error)
-                    if (data) code_id = data.id
+                    uniqueCodesToFetch.add(code)
                 }
 
-                // Push final mapped row
-                mappedData.push({
-                    key: code_id ? code_id : `ORPHAN:${systemName}:${code}`,
+                // Store pre-calculated data to avoid re-doing logic in step 4
+                rowsToProcess.push({
+                    rawRow: row,
                     code,
-                    description,
-                    system: dbSystem?.name || systemName, // fallback to user-specified value
-                    system_id: system_id
+                    description: columnMapping.value.description ? row[columnMapping.value.description] : null,
+                    systemName,
+                    dbSystem,
+                    system_id
                 })
             }
 
-            // Save only rows with a code
+            // 3. BATCH FETCH: Get all relevant codes from DB in one go
+            // We fetch any code string that appeared in the file.
+            // We will filter by system_id in memory later.
+            const dbCodeLookup = new Map() // Key: "system_id:code", Value: database_id
+
+            if (uniqueCodesToFetch.size > 0) {
+                const allCodes = Array.from(uniqueCodesToFetch)
+
+                // Chunking: Supabase URL limit might fail if checking 5000+ codes at once.
+                // We split into chunks of 1000 to be safe.
+                const chunkSize = 1000
+                for (let i = 0; i < allCodes.length; i += chunkSize) {
+                    const chunk = allCodes.slice(i, i + chunkSize)
+
+                    const { data, error } = await supabase
+                        .from('codes')
+                        .select('id, system_id, code')
+                        .in('code', chunk) // Fetch all matching codes
+
+                    if (error) throw error
+
+                    if (data) {
+                        data.forEach(dbRow => {
+                            // Create a composite key to ensure uniqueness across systems
+                            // e.g. "123:A01" (System 123, Code A01)
+                            const key = `${dbRow.system_id}:${dbRow.code}`
+                            dbCodeLookup.set(key, dbRow.id)
+                        })
+                    }
+                }
+            }
+
+            // 4. Map final data using in-memory lookup (Instant)
+            const mappedData = rowsToProcess.map(item => {
+                let code_id = null
+
+                // Perform O(1) lookup
+                if (item.system_id) {
+                    const key = `${item.system_id}:${item.code}`
+                    code_id = dbCodeLookup.get(key) || null
+                }
+
+                return {
+                    key: code_id ? code_id : `ORPHAN:${item.systemName}:${item.code}`,
+                    code: item.code,
+                    description: item.description,
+                    system: item.dbSystem?.name || item.systemName,
+                    system_id: item.system_id
+                }
+            })
+
             importedData.value = mappedData
 
         } catch (err) {

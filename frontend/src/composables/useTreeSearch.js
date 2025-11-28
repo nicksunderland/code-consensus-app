@@ -3,6 +3,7 @@ import { supabase } from '@/composables/useSupabase.js'
 import { apiClient } from '@/composables/apiClient.js'
 import { useNotifications } from './useNotifications'
 import { usePhenotypes } from "@/composables/usePhenotypes.js";
+import {useCodeSystems} from "@/composables/useCodeSystems.js";
 
 
 // ---------------------------------------------
@@ -18,9 +19,6 @@ const searchInOptions = [
     { label: 'Codes',       value: 'code'        },
     { label: 'Description', value: 'description' },
 ]
-const searchSystemsOptions = ref([
-    { name: 'ICD-10', id: 1 },
-])
 const searchInputs = ref([])
 
 // ---------------------------------------------
@@ -29,6 +27,11 @@ const searchInputs = ref([])
 export function useTreeSearch() {
     // Get dependencies inside the composable function
     const { emitError, emitSuccess } = useNotifications()
+
+    // get and generate the code systems options for the UI
+    const { codeSystems, loadCodeSystems } = useCodeSystems()
+
+
 
     // ------------------------------------------------------------
     // UTILS
@@ -51,7 +54,6 @@ export function useTreeSearch() {
     }
 
     function clearTreeState() {
-        nodes.value = []
         selectedNodeKeys.value = {}
         searchNodeKeys.value = {}
         expandedNodeKeys.value = {}
@@ -62,11 +64,25 @@ export function useTreeSearch() {
     // ------------------------------------------------------------
     // SEARCH INPUTS
     // ------------------------------------------------------------
+    loadCodeSystems().catch(err => { console.error("Failed to load code systems:", err) })
+    const searchSystemsOptions = computed(() => {
+        return codeSystems.value.map(sys => ({
+            name: sys.name,
+            id: sys.id
+        }))
+    })
+    const getDefaultSystemIds = () => {
+        if (codeSystems.value.length === 0) return []
+        const defaults = ['ICD-10-UKBB', 'ICD-9-UKBB']
+        return codeSystems.value
+            .filter(sys => defaults.includes(sys.name))
+            .map(sys => sys.id)
+    }
     const makeSearchInput = () => ({
         text: '',
         regex: false,
         columns: searchInOptions.map(x => x.value),
-        system_ids: searchSystemsOptions.value.map(x => x.id),
+        system_ids: getDefaultSystemIds()
     })
 
     function addSearchTerm() {
@@ -416,7 +432,6 @@ export function useTreeSearch() {
         }
 
     }
-
 
     // ------------------------------------------------------------
     // EXPORT
