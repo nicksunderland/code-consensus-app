@@ -85,7 +85,7 @@ export function useTreeSearch() {
         system_ids: getDefaultSystemIds()
     })
 
-    function addSearchTerm() {
+    function addSearchTerm(isAuto = false) {
         if (searchInputs.value.length === 0) {
             searchInputs.value.push(makeSearchInput())
             return
@@ -98,7 +98,9 @@ export function useTreeSearch() {
         } else {
             const isSingleEmptyRow = searchInputs.value.length === 1 && !searchInputs.value[0].text;
             if (!isSingleEmptyRow) {
-                 emitError("Incomplete Search Term", "Please fill in all existing search terms before adding a new one.")
+                 if (!isAuto) {
+                     emitError("Incomplete Search Term", "Please fill in all existing search terms before adding a new one.")
+                 }
             }
         }
     }

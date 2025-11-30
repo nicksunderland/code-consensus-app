@@ -5,6 +5,7 @@ import HomeView from '../views/HomeView.vue';
 import AccordionView from '../views/AccordionView.vue';
 import DocumentationView from "@/views/DocumentationView.vue";
 import PhenoFlowView from "@/views/PhenoFlowView.vue";
+import ExamplesView from "@/views/Examples.vue";
 import { useHead } from '@unhead/vue';
 
 const router = createRouter({
@@ -33,6 +34,12 @@ const router = createRouter({
       name: 'documentation',
       component: DocumentationView,
       meta: { title: 'Documentation' }
+    },
+    {
+      path: '/examples',
+      name: 'examples',
+      component: ExamplesView,
+      meta: { title: 'Examples' }
     }
   ]
 });

@@ -50,13 +50,7 @@ export function useMenu() {
                 }
             }))
 
-        // 3. Examples Dropdown
-        const exampleItems = [
-            { label: 'Heart failure', icon: 'pi pi-fw pi-heart' },
-            { label: 'Coronary artery disease', icon: 'pi pi-fw pi-heart-fill' }
-        ]
-
-        // 4. Account Dropdown
+        // 3. Account Dropdown
         const accountItems = !user
         ? {
             label: 'Login',
@@ -97,7 +91,7 @@ export function useMenu() {
         ];
 
         const endNav = [
-            { label: 'Examples', icon: 'pi pi-book', items: exampleItems },
+            { label: 'Examples', icon: 'pi pi-book', route: '/examples' },
             accountItems
         ];
 
@@ -106,13 +100,9 @@ export function useMenu() {
         const consensusRoutes = ['/accordion', '/flow'];
         const isConsensusMode = consensusRoutes.includes(route.path);
 
-        if (isConsensusMode) {
-            // Remove 'Examples' from endNav if you want strict separation,
-            // or keep it. Here I removed it to match previous logic.
-            return [...baseNav, ...toolItems, accountItems];
-        } else {
-            return [...baseNav, ...endNav];
-        }
+        return isConsensusMode
+            ? [...baseNav, ...toolItems, accountItems]
+            : [...baseNav, ...endNav];
   })
 
   return {

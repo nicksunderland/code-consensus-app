@@ -58,7 +58,7 @@ const removeAllCodes = (event) => {
 // --- Load tree on component mount ---
 onMounted(async () => {
     // console.log("in onMounted TreeSearch.vue:", nodes)
-    addSearchTerm()
+    if (!searchInputs.value.length) addSearchTerm(true)
     // console.log("in onMounted TreeSearch.vue:", searchInputs)
     await onNodeExpand(null)
 
