@@ -1,5 +1,5 @@
 <script setup>
-import { useProjects } from '@/composables/useProjects.js'
+import { useProjects } from '@/composables/project/useProjects.js'
 import Dialog from 'primevue/dialog'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'

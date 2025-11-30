@@ -3,7 +3,7 @@ import {reactive, ref, watch} from 'vue'
 import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import FloatLabel from 'primevue/floatlabel'
-import {usePhenotypes} from "@/composables/usePhenotypes.js";
+import {usePhenotypes} from "@/composables/project/usePhenotypes.js";
 import Button from "primevue/button";
 import SplitButton from "primevue/splitbutton";
 import ConfirmPopup from "primevue/confirmpopup";

@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
-import { supabase } from '@/composables/useSupabase.js'
-import { useNotifications } from './useNotifications'
+import { supabase } from '@/composables/shared/useSupabase.js'
+import { useNotifications } from '../shared/useNotifications.js'
 
 // required composables
 const { emitError, emitSuccess } = useNotifications()

@@ -12,23 +12,26 @@ import httpx
 
 load_dotenv()
 
-app = FastAPI()
-
 # --- CORS Configuration ---
-origins = [
-    "http://localhost:5173",
-    "https://code-consensus.netlify.app",
-]
+def get_allowed_origins():
+    origins_env = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("ORIGIN", "")
+    if not origins_env:
+        return []
+    return [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+
+ALLOWED_ORIGINS = get_allowed_origins()
+
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- Database Setup ---
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("VITE_DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set.")
 async_db_url = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")

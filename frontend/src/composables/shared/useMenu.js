@@ -1,8 +1,8 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useAuth } from "@/composables/useAuth.js";
-import { useProjects } from "@/composables/useProjects.js";
-import { usePhenotypes } from "@/composables/usePhenotypes.js";
+import { useAuth } from "@/composables/auth/useAuth.js";
+import { useProjects } from "@/composables/project/useProjects.js";
+import { usePhenotypes } from "@/composables/project/usePhenotypes.js";
 
 export function useMenu() {
     const router = useRouter()

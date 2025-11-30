@@ -11,7 +11,7 @@ import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import InputText from 'primevue/inputtext'
 import Card from 'primevue/card'
-import { useCodeImport } from "@/composables/useCodeImport.js";
+import { useCodeImport } from "@/composables/selection/useCodeImport.js";
 
 // --- Connect to Composable ---
 const {

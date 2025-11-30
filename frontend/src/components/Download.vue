@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useDownload } from '@/composables/useDownload.js'
-import { usePhenotypes } from '@/composables/usePhenotypes.js'
+import { useDownload } from '@/composables/selection/useDownload.js'
+import { usePhenotypes } from '@/composables/project/usePhenotypes.js'
 import { useToast } from 'primevue/usetoast'
 import VCodeBlock from '@wdns/vue-code-block'
 import Prism from 'prismjs'
@@ -129,16 +129,8 @@ watch(
             <span class="file-name">{{ fileName }}</span>
           </div>
 
-          <div class="code-content">
-             <VCodeBlock
-                :code="displayContent"
-                :lang="currentLanguage"
-                theme="solarizedlight"
-                class="v-code-block-override"
-                :prismjs="true"
-                :browser-window="false"
-                :tabs="false"
-            />
+          <div class="json-card">
+            <pre>{{ displayContent }}</pre>
           </div>
       </template>
     </div>
@@ -246,32 +238,22 @@ watch(
   color: #374151;
 }
 
-/* 6. Code Content Area */
-.code-content {
-  flex: 1;
-  position: relative;
-  overflow: hidden; /* Vital: lets VCodeBlock manage the scrollbars */
+.json-card {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 1rem;
+  margin-top: 0rem;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  min-height: 240px;
+  overflow: auto;
 }
 
-/* 7. VCodeBlock Overrides */
-/* strictly override library defaults to fit our container */
-:deep(.v-code-block-override) {
-    margin: 0 !important;
-    border-radius: 0 !important;
-    height: 100% !important;
-    width: 100% !important;
-    font-size: 0.875rem !important;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-}
-
-/* Ensure the inner pre tag also fills height and uses transparent background */
-:deep(.v-code-block pre) {
-    margin: 0 !important;
-    border-radius: 0 !important;
-    height: 100% !important;
-    background-color: transparent !important;
-    font-family: inherit !important;
-    overflow: auto !important;
+.json-card pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .empty-state {

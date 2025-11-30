@@ -1,9 +1,9 @@
 import {ref, reactive, computed, watch} from 'vue'
-import { supabase } from '@/composables/useSupabase.js'
-import { apiClient } from '@/composables/apiClient.js'
-import { useNotifications } from './useNotifications'
-import { usePhenotypes } from "@/composables/usePhenotypes.js";
-import {useCodeSystems} from "@/composables/useCodeSystems.js";
+import { supabase } from '@/composables/shared/useSupabase.js'
+import { apiClient } from '@/composables/shared/apiClient.js'
+import { useNotifications } from '../shared/useNotifications.js'
+import { usePhenotypes } from "@/composables/project/usePhenotypes.js";
+import {useCodeSystems} from "@/composables/shared/useCodeSystems.js";
 
 
 // ---------------------------------------------
@@ -141,7 +141,6 @@ export function useTreeSearch() {
             is_regex: input.regex,
             target_columns: input.columns,     // ["code", "description"]
             system_ids: input.system_ids,      // [1]
-            is_ai_enhanced: false,             // Future placeholder
             row_order: index
         }));
 
@@ -214,7 +213,10 @@ export function useTreeSearch() {
             try {
                 // console.log("parentId:", parentId)
                 const res = await apiClient.get('/api/tree-nodes', { params: { parent_id: parentId } });
-                // console.log("await apiClient.get:", res)
+
+                if (!Array.isArray(res.data)) {
+                    throw new Error('Unexpected tree response shape');
+                }
 
                 const children = res.data.map(child => ({ ...child }));
 
@@ -230,7 +232,8 @@ export function useTreeSearch() {
                 sortTreeNodes(isRoot ? nodes.value : node.children);
 
             } catch (err) {
-                console.error('Failed to load children for node', node.key, err);
+                const key = node ? node.key : 'root';
+                console.error('Failed to load children for node', key, err);
             } finally {
                 if (node) node.loading = false;
             }

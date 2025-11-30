@@ -7,9 +7,9 @@ import MultiSelect from "primevue/multiselect";
 import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import ToggleSwitch from "primevue/toggleswitch";
-import {useTreeSearch} from "@/composables/useTreeSearch.js";
-import {usePhenotypes} from "@/composables/usePhenotypes.js";
-import {useCodeSystems} from "@/composables/useCodeSystems.js";
+import {useTreeSearch} from "@/composables/tree/useTreeSearch.js";
+import {usePhenotypes} from "@/composables/project/usePhenotypes.js";
+import {useCodeSystems} from "@/composables/shared/useCodeSystems.js";
 import ConfirmDialog from "primevue/confirmdialog";
 
 // --- use composable ---

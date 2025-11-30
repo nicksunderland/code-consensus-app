@@ -1,11 +1,11 @@
 import { ref, computed, watch } from 'vue'
-import { supabase } from '@/composables/useSupabase.js'
-import { useNotifications } from './useNotifications'
-import { useTreeSearch } from "@/composables/useTreeSearch.js";
-import { useAuth } from "@/composables/useAuth.js";
-import { usePhenotypes } from "@/composables/usePhenotypes.js";
-import { useDownload } from "@/composables/useDownload.js";
-import {useCodeImport} from "@/composables/useCodeImport.js";
+import { supabase } from '@/composables/shared/useSupabase.js'
+import { useNotifications } from '../shared/useNotifications.js'
+import { useTreeSearch } from "@/composables/tree/useTreeSearch.js";
+import { useAuth } from "@/composables/auth/useAuth.js";
+import { usePhenotypes } from "@/composables/project/usePhenotypes.js";
+import { useDownload } from "@/composables/selection/useDownload.js";
+import {useCodeImport} from "@/composables/selection/useCodeImport.js";
 
 // composables
 const {
@@ -137,7 +137,6 @@ const tableRows = computed(() => {
             }
         });
     }
-    console.log("tableRows computed:", Array.from(rowsMap.values()));
     return Array.from(rowsMap.values());
 });
 const isSaving = ref(false);
@@ -177,7 +176,6 @@ export function useCodeSelection() {
     const updateConsensusSelection = (key, val) => {
         if (!consensusState.value[key]) consensusState.value[key] = { selected: false, comment: '' };
         consensusState.value[key].selected = val;
-        console.log("updateConsensusSelection:", key, val, consensusState.value);
     };
 
     const updateConsensusComment = (key, val) => {
@@ -238,7 +236,6 @@ export function useCodeSelection() {
         // 1. Validation
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
-        console.log("Saving selections for phenotype:", phenotypeId, "user:", userId);
         if (!userId) {
             emitError("Save Failed", "Please log in to save your selections.");
             return;
@@ -251,59 +248,60 @@ export function useCodeSelection() {
         isSaving.value = true;
 
         try {
-            // Split tableRows into known codes and orphans
-            const knownCodes = [];
-            const orphans = [];
+            const standardRows = [];
+            const orphanRows = [];
 
             tableRows.value.forEach(row => {
-              if (row.imported && typeof row.key === 'string' && row.key.startsWith('ORPHAN')) {
-                orphans.push({
+                const base = {
                     phenotype_id: phenotypeId,
-                    code: row.code,
-                    user_id: userId,
-                    orphan_id: row.key,
-                    description: row.description || '',
-                    system_name: row.system,
-                    is_selected: row.selected,
-                    comment: row.comment || null
-                });
-              } else {
-                knownCodes.push({
-                    phenotype_id: phenotypeId,
-                    code_id: parseInt(row.key),
                     user_id: userId,
                     found_in_search: row.found,
                     is_selected: row.selected,
                     comment: row.comment || null,
                     imported: row.imported
-                });
-              }
+                };
+
+                const isOrphan = typeof row.key === 'string' && row.key.startsWith('ORPHAN');
+
+                if (isOrphan) {
+                    orphanRows.push({
+                        ...base,
+                        code_type: 'orphan',
+                        orphan_id: row.key,
+                        code_text: row.code,
+                        code_description: row.description || '',
+                        system_name: row.system || 'Custom'
+                    });
+                } else {
+                    const codeId = parseInt(row.key);
+                    if (Number.isNaN(codeId)) return;
+                    standardRows.push({
+                        ...base,
+                        code_type: 'standard',
+                        code_id: codeId
+                    });
+                }
             });
 
-            // 1️⃣ Save known codes
-            if (knownCodes.length > 0) {
-              const { error } = await supabase
-                .from('user_code_selections')
-                .upsert(knownCodes, { onConflict: 'phenotype_id, code_id, user_id' });
-
-              if (error) throw error;
+            if (standardRows.length > 0) {
+                const { error } = await supabase
+                    .from('user_code_selections')
+                    .upsert(standardRows, { onConflict: 'phenotype_id, code_id, user_id' });
+                if (error) throw error;
             }
 
-            // 2️⃣ Save orphan codes
-            if (orphans.length > 0) {
-              const { error } = await supabase
-                .from('user_code_selections_orphan')
-                .upsert(orphans, { onConflict: 'phenotype_id, orphan_id, user_id' });
-
-              if (error) throw error;
+            if (orphanRows.length > 0) {
+                const { error } = await supabase
+                    .from('user_code_selections')
+                    .upsert(orphanRows, { onConflict: 'phenotype_id, orphan_id, user_id' });
+                if (error) throw error;
             }
 
-            // save search strategy as well
             await saveSearchStrategy(phenotypeId);
 
             lastSavedSelectionHash.value = getSelectionHash();
 
-            emitSuccess("Saved", `Updated ${knownCodes.length + orphans.length} codes.`);
+            emitSuccess("Saved", `Updated ${standardRows.length + orphanRows.length} codes.`);
             await resetDownloadCache(phenotypeId);
 
         } catch (error) {
@@ -320,127 +318,73 @@ export function useCodeSelection() {
         const userId = user.value?.id;
         if (!phenotypeId || !userId) return;
 
-        // Fetch data in parallel
-        const [userRes, orphanRes, consensusRes] = await Promise.all([
-            // A. Known team selections
-            supabase
-                .from('user_code_selections')
-                .select(`
-                    code_id, 
-                    user_id,
-                    is_selected, 
-                    comment, 
-                    found_in_search, 
-                    imported,
-                    code_details:codes(
-                        code, 
-                        description,
-                        system_id,
-                        system_details:code_systems(name)
-                    )
-                 `)
-                .eq('phenotype_id', phenotypeId),
-            // B. Orphan team selections
-            supabase
-                .from('user_code_selections_orphan')
-                .select('orphan_id, user_id, code, description, is_selected, comment, system_name')
-                .eq('phenotype_id', phenotypeId),
-            // C. Consensus
-            supabase
-                .from('phenotype_consensus')
-                .select('code_id, orphan_id, comments')
-                .eq('phenotype_id', phenotypeId),
-        ]);
+        const { data, error } = await supabase
+            .from('user_code_selections')
+            .select(`
+                code_id,
+                orphan_id,
+                code_type,
+                is_selected,
+                comment,
+                found_in_search,
+                imported,
+                code_text,
+                code_description,
+                system_name,
+                user_id,
+                code:codes(
+                    code,
+                    description,
+                    system_id,
+                    system:code_systems(name)
+                )
+            `)
+            .eq('phenotype_id', phenotypeId);
 
-        console.log("fetchUserSelections::responses", { userRes, orphanRes, consensusRes });
+        if (error) {
+            console.error(error);
+            emitError("Load failed", error.message);
+            return;
+        }
 
-        if (userRes.error) console.error(userRes.error);
-        if (consensusRes.error) console.error(consensusRes.error);
-        if (orphanRes.error) console.error(orphanRes.error);
-
-        // 2. Prepare empty state objects
         const restoredSelected = {};
         const restoredSearch = {};
         const restoredComments = {};
         const allIdsToLoad = new Set();
-        const consensusMap = {};
+        const consensusMap = { ...consensusState.value }; // keep existing consensus until refreshed
         const processedImportKeys = new Set();
         importedData.value = [];
 
-        // 3. PROCESS CONSENSUS
-        (consensusRes.data || []).forEach(row => {
-            const key = row.code_id ?? row.orphan_id;
-            consensusMap[key] = {
-                selected: true,
-                comment: row.comments || ''
-            };
+        (data || []).forEach(row => {
+            const isOrphan = row.code_type === 'orphan';
+            const key = String(row.code_id ?? row.orphan_id);
+
+            if (!isOrphan && row.code_id) {
+                allIdsToLoad.add(row.code_id);
+                if (row.found_in_search) restoredSearch[row.code_id] = true;
+            }
+
+            if (row.user_id === userId) {
+                if (row.is_selected) restoredSelected[key] = true;
+                if (row.comment) restoredComments[key] = row.comment;
+            }
+
+            if (row.imported && !processedImportKeys.has(key)) {
+                const details = row.code || {};
+                const systemInfo = details.system || {};
+                importedData.value.push({
+                    key,
+                    code: row.code_text || details.code,
+                    description: row.code_description || details.description,
+                    system: row.system_name || systemInfo.name,
+                    system_id: details.system_id || null,
+                    imported: true,
+                    consensus_selected: consensusMap[key]?.selected ?? false
+                });
+                processedImportKeys.add(key);
+            }
         });
 
-        // 4. PROCESS STANDARD CODES (Merged Logic)
-        (userRes.data || []).forEach(row => {
-
-            // --- VISIBILITY (Global) ---
-            // If it exists in the DB for this phenotype, we want to ensure the Tree loads it
-            allIdsToLoad.add(row.code_id);
-
-            // --- SEARCH STATE (Global) ---
-            // if found_in_search is true, mark it true to help the tree highlight these
-            if (row.found_in_search) {
-                restoredSearch[row.code_id] = true;
-            }
-
-            // --- SELECTION STATE (Personal) ---
-            // selected and comment for the currently logged-in user
-            if (row.user_id === userId) {
-                if (row.is_selected) restoredSelected[row.code_id] = true;
-                if (row.comment) restoredComments[row.code_id] = row.comment;
-            }
-
-            // --- IMPORTED DATA (Global) ---
-            // If ANYONE imported this, add to importedData (deduplicated)
-            if (row.imported && !processedImportKeys.has(row.code_id)) {
-                const details = row.code_details || {};
-                const systemInfo = details.system_details || {};
-
-                importedData.value.push({
-                    key: row.code_id,
-                    code: details.code,
-                    description: details.description,
-                    system: systemInfo.name,
-                    system_id: details.system_id,
-                    imported: true
-                });
-                processedImportKeys.add(row.code_id);
-            }
-
-        }); // end processing standard codes
-
-
-        // 5. PROCESS ORPHANS
-        (orphanRes.data || []).forEach(row => {
-            // --- SELECTION STATE (Personal) ---
-            if (row.user_id === userId) {
-                if (row.is_selected) restoredSelected[row.orphan_id] = true;
-                if (row.comment) restoredComments[row.orphan_id] = row.comment;
-            }
-
-            // --- VISIBILITY (Global) ---
-            if (!processedImportKeys.has(row.orphan_id)) {
-                importedData.value.push({
-                    key: row.orphan_id,
-                    code: row.code,
-                    description: row.description,
-                    system: row.system_name,
-                    system_id: null,
-                    imported: true,
-                    consensus_selected: consensusMap[row.orphan_id]?.selected ?? false
-                });
-                processedImportKeys.add(row.orphan_id);
-            }
-        }); // end processing standard orphans
-
-        // 6. HYDRATE TREE
-        // This fetches the actual Code/Description text for the table
         if (allIdsToLoad.size > 0) {
             const injectionMap = {};
             allIdsToLoad.forEach(id => {
@@ -451,13 +395,10 @@ export function useCodeSelection() {
             await fetchSpecificNodes(Array.from(allIdsToLoad), injectionMap);
         }
 
-        // 7. UPDATE STATE
         selectedNodeKeys.value = restoredSelected;
         searchNodeKeys.value = restoredSearch;
         userComments.value = restoredComments;
-        consensusState.value = consensusMap;
 
-        // 8. UPDATE DIRTY STATE TRACKER
         setTimeout(() => {
             lastSavedSelectionHash.value = getSelectionHash();
             lastSavedConsensusHash.value = getConsensusHash();
@@ -470,34 +411,20 @@ export function useCodeSelection() {
         if (!phenotypeId) return;
 
         try {
-            const [normalRes, orphanRes] = await Promise.all([
-                supabase
-                    .from('user_code_selections')
-                    .select(`
-                        code_id,
-                        user_id,
-                        is_selected,
-                        comment,
-                        email:user_profiles(email)
-                    `)
-                    .eq('phenotype_id', phenotypeId),
-                supabase
-                    .from('user_code_selections_orphan')
-                    .select(`
-                        orphan_id,
-                        code,
-                        user_id,
-                        is_selected,
-                        comment,
-                        email:user_profiles(email)
-                    `)
-                    .eq('phenotype_id', phenotypeId)
-            ]);
+            const { data, error } = await supabase
+                .from('user_code_selections')
+                .select(`
+                    code_type,
+                    code_id,
+                    orphan_id,
+                    user_id,
+                    is_selected,
+                    comment,
+                    email:user_profiles(email)
+                `)
+                .eq('phenotype_id', phenotypeId);
 
-            if (normalRes.error) throw normalRes.error;
-            if (orphanRes.error) throw orphanRes.error;
-
-            const data = [...(normalRes.data || []), ...(orphanRes.data || [])];
+            if (error) throw error;
 
             // TRANSFORM LOGIC
             const map = {};
@@ -562,8 +489,8 @@ export function useCodeSelection() {
         if (!phenotypeId) return;
 
         const { data, error } = await supabase
-            .from('phenotype_consensus')
-            .select('code_id, orphan_id, comments, finalized_at')
+            .from('phenotype_consensus_codes')
+            .select('code_type, code_id, orphan_id, consensus_comments')
             .eq('phenotype_id', phenotypeId);
 
         if (error) {
@@ -572,23 +499,17 @@ export function useCodeSelection() {
             return;
         }
 
-        // Map DB results to local state
         const map = {};
-        let locked = false;
-
-        data.forEach(row => {
-            const key = row.code_id ?? row.orphan_id; // normal codes use code_id, orphans use orphan_id
+        (data || []).forEach(row => {
+            const key = String(row.code_id ?? row.orphan_id);
             map[key] = {
-                selected: true, // If it's in this table, it is selected
-                comment: row.comments || ''
+                selected: true,
+                comment: row.consensus_comments || ''
             };
-            if (row.finalized_at) locked = true;
         });
-        // console.log("Fetched Consensus Data:", map);
         consensusState.value = map;
-        isFinalized.value = locked;
+        isFinalized.value = false;
 
-        // ---> UPDATE DIRTY STATE TRACKER <---
         setTimeout(() => {
             lastSavedConsensusHash.value = getConsensusHash();
         }, 0);
@@ -610,69 +531,42 @@ export function useCodeSelection() {
 
         const finalRows = tableRows.value.filter(r => r.consensus_selected);
 
-        console.log("saveConsensus::finalRows", finalRows);
-
         try {
-            // 1. Clear previous consensus for this phenotype
-            // (Ensures we don't keep "stale" codes that were unselected this time)
-            const { error: deleteError } = await supabase
-                .from('phenotype_consensus')
-                .delete()
-                .eq('phenotype_id', phenotypeId);
-
-            if (deleteError) {
-                emitError("Error", "Failed to clean consensus DB prior to saving.");
-                return;
-            }
-
-            // 2. Prepare Payload
-            const normalPayload = [];
-            const orphanPayload = [];
-
+            const desiredMap = new Map();
             finalRows.forEach(row => {
-                const base = {
-                    phenotype_id: phenotypeId,
-                    comments: row.consensus_comment || '',
-                    finalized_at: finalize ? new Date().toISOString() : null
+                desiredMap.set(row.key, row.consensus_comment || '');
+            });
+
+            const existingKeys = Object.keys(consensusState.value || {});
+            const allKeys = new Set([...existingKeys, ...Array.from(desiredMap.keys())]);
+
+            for (const key of allKeys) {
+                const isOrphan = typeof key === 'string' && key.startsWith('ORPHAN');
+                const comment = desiredMap.get(key) || '';
+                const isSelected = desiredMap.has(key);
+
+                const params = {
+                    p_phenotype_id: phenotypeId,
+                    p_code_type: isOrphan ? 'orphan' : 'standard',
+                    p_code_id: isOrphan ? null : parseInt(key),
+                    p_orphan_id: isOrphan ? key : null,
+                    p_consensus_comments: comment,
+                    p_is_consensus: isSelected
                 };
 
-                if (row.key.startsWith('ORPHAN:')) {
-                    orphanPayload.push({
-                        ...base,
-                        orphan_id: row.key // store orphan UUID
-                    });
-                } else {
-                    normalPayload.push({
-                        ...base,
-                        code_id: parseInt(row.key)
-                    });
-                }
-            });
+                const { error } = await supabase.rpc('set_code_consensus', params);
+                if (error) throw error;
+            }
+
+            consensusState.value = Object.fromEntries(
+                Array.from(desiredMap.entries()).map(([k, comment]) => [k, { selected: true, comment }])
+            );
+            lastSavedConsensusHash.value = getConsensusHash();
 
             isFinalized.value = finalize;
 
-            // 3️⃣ Upsert normal codes
-            if (normalPayload.length > 0) {
-                const { error } = await supabase
-                    .from('phenotype_consensus')
-                    .upsert(normalPayload, { onConflict: 'phenotype_id, code_id' });
-
-                if (error) throw error;
-            }
-
-            // 4️⃣ Upsert orphan codes
-            if (orphanPayload.length > 0) {
-                const { error } = await supabase
-                    .from('phenotype_consensus')
-                    .upsert(orphanPayload, { onConflict: 'phenotype_id, orphan_id' });
-
-                if (error) throw error;
-            }
-
-            lastSavedConsensusHash.value = getConsensusHash();
-
             const action = finalize ? "Finalized" : "Saved";
-            emitSuccess(action, `${action} ${normalPayload.length + orphanPayload.length} codes successfully.`);
+            emitSuccess(action, `${action} consensus for ${finalRows.length} codes.`);
 
             await resetDownloadCache(phenotypeId);
 
@@ -700,22 +594,16 @@ export function useCodeSelection() {
         isSaving.value = true;
 
         try {
-            // 0️⃣ Check if user has any imported codes first
-            const [orphanCheck, importedCheck] = await Promise.all([
-                supabase
-                    .from('user_code_selections_orphan')
-                    .select('orphan_id', { count: 'exact', head: true })
-                    .eq('phenotype_id', phenotypeId)
-                    .eq('user_id', userId),
-                supabase
-                    .from('user_code_selections')
-                    .select('code_id', { count: 'exact', head: true })
-                    .eq('phenotype_id', phenotypeId)
-                    .eq('user_id', userId)
-                    .eq('imported', true)
-            ]);
+            const { data: importedRows, error: countError } = await supabase
+                .from('user_code_selections')
+                .select('code_id, orphan_id, code_type', { count: 'exact' })
+                .eq('phenotype_id', phenotypeId)
+                .eq('user_id', userId)
+                .eq('imported', true);
 
-            const totalImported = (orphanCheck.count || 0) + (importedCheck.count || 0);
+            if (countError) throw countError;
+
+            const totalImported = importedRows?.length || 0;
 
             if (totalImported === 0) {
                 emitError("Nothing to Clear", "You have no imported codes for this phenotype (codes were imported by another group member).");
@@ -723,67 +611,31 @@ export function useCodeSelection() {
                 return;
             }
 
-            // Get list of orphan_ids and code_ids to delete from consensus
-            const { data: orphanIds } = await supabase
-                .from('user_code_selections_orphan')
-                .select('orphan_id')
-                .eq('phenotype_id', phenotypeId)
-                .eq('user_id', userId);
-
-            const { data: importedIds } = await supabase
-                .from('user_code_selections')
-                .select('code_id')
-                .eq('phenotype_id', phenotypeId)
-                .eq('user_id', userId)
-                .eq('imported', true);
-
-            // 1️⃣ Delete all orphan codes for this user and phenotype
-            const { error: orphanError } = await supabase
-                .from('user_code_selections_orphan')
-                .delete()
-                .eq('phenotype_id', phenotypeId)
-                .eq('user_id', userId);
-
-            if (orphanError) throw orphanError;
-
-            // 2️⃣ Delete imported mapped codes (where imported = true)
-            const { error: importedError } = await supabase
+            const { error: deleteError } = await supabase
                 .from('user_code_selections')
                 .delete()
                 .eq('phenotype_id', phenotypeId)
                 .eq('user_id', userId)
                 .eq('imported', true);
 
-            if (importedError) throw importedError;
+            if (deleteError) throw deleteError;
 
-            // 3️⃣ Delete orphan codes from phenotype_consensus
-            if (orphanIds && orphanIds.length > 0) {
-                const orphanIdList = orphanIds.map(row => row.orphan_id);
-                const { error: consensusOrphanError } = await supabase
-                    .from('phenotype_consensus')
-                    .delete()
-                    .eq('phenotype_id', phenotypeId)
-                    .in('orphan_id', orphanIdList);
-
-                if (consensusOrphanError) throw consensusOrphanError;
+            // Clear consensus flags for removed imports
+            for (const row of importedRows || []) {
+                const key = row.code_id ?? row.orphan_id;
+                const params = {
+                    p_phenotype_id: phenotypeId,
+                    p_code_type: row.code_type,
+                    p_code_id: row.code_type === 'standard' ? row.code_id : null,
+                    p_orphan_id: row.code_type === 'orphan' ? row.orphan_id : null,
+                    p_consensus_comments: null,
+                    p_is_consensus: false
+                };
+                await supabase.rpc('set_code_consensus', params);
             }
 
-            // 4️⃣ Delete imported mapped codes from phenotype_consensus
-            if (importedIds && importedIds.length > 0) {
-                const codeIdList = importedIds.map(row => row.code_id);
-                const { error: consensusImportedError } = await supabase
-                    .from('phenotype_consensus')
-                    .delete()
-                    .eq('phenotype_id', phenotypeId)
-                    .in('code_id', codeIdList);
-
-                if (consensusImportedError) throw consensusImportedError;
-            }
-
-            // 5️⃣ Clear the importedData array
             importedData.value = [];
 
-            // 6️⃣ Remove imported codes from local state
             const newSelectedKeys = { ...selectedNodeKeys.value };
             const newComments = { ...userComments.value };
             const newConsensusState = { ...consensusState.value };
@@ -800,8 +652,6 @@ export function useCodeSelection() {
             userComments.value = newComments;
             consensusState.value = newConsensusState;
 
-            // ---> UPDATE DIRTY STATE TRACKER <---
-            // Both are updated because removing imported codes changes both your personal list and the consensus list
             setTimeout(() => {
                 lastSavedSelectionHash.value = getSelectionHash();
                 lastSavedConsensusHash.value = getConsensusHash();
@@ -825,29 +675,8 @@ export function useCodeSelection() {
         const phenotypeId = currentPhenotype.value?.id;
         if (!phenotypeId) return;
 
-        isSaving.value = true;
-
-        try {
-            // Update all records for this phenotype to set finalized_at to NULL
-            const { error } = await supabase
-                .from('phenotype_consensus')
-                .update({ finalized_at: null })
-                .eq('phenotype_id', phenotypeId);
-
-            if (error) throw error;
-
-            isFinalized.value = false;
-
-            emitSuccess("Unlocked", "Consensus codes are now editable.");
-
-            await resetDownloadCache(phenotypeId);
-
-        } catch (err) {
-            console.error(err);
-            emitError("Unlock Failed", "Could not unlock codes.");
-        } finally {
-            isSaving.value = false;
-        }
+        isFinalized.value = false;
+        emitSuccess("Unlocked", "Consensus codes are now editable.");
     }
 
     // ------------------------------------------------------------

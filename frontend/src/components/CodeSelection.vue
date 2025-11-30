@@ -10,16 +10,16 @@ import Tag from 'primevue/tag';
 import ToggleButton from 'primevue/togglebutton';
 import ConfirmPopup from 'primevue/confirmpopup';
 import 'primeicons/primeicons.css';
-import {useCodeSelection} from "@/composables/useCodeSelection.js";
+import {useCodeSelection} from "@/composables/selection/useCodeSelection.js";
 import {useConfirm} from "primevue/useconfirm";
 import Avatar from 'primevue/avatar';
 import OverlayBadge from 'primevue/overlaybadge';
 import {ref, computed} from "vue";
-import {useAuth} from "@/composables/useAuth.js";
-import {useProjects} from "@/composables/useProjects.js";
+import {useAuth} from "@/composables/auth/useAuth.js";
+import {useProjects} from "@/composables/project/useProjects.js";
 import CodeImport from "@/components/CodeImport.vue";
-import {useCodeImport} from "@/composables/useCodeImport.js";
-import {usePhenotypes} from "@/composables/usePhenotypes.js";
+import {useCodeImport} from "@/composables/selection/useCodeImport.js";
+import {usePhenotypes} from "@/composables/project/usePhenotypes.js";
 
 // --- use composable ---
 const {
