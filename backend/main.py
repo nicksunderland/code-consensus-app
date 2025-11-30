@@ -9,26 +9,30 @@ from typing import List
 from dotenv import load_dotenv
 from urllib.parse import urlparse, parse_qs
 import httpx
+from uuid import UUID
 
 load_dotenv()
 
-app = FastAPI()
-
 # --- CORS Configuration ---
-origins = [
-    "http://localhost:5173",
-    "https://code-consensus.netlify.app",
-]
+def get_allowed_origins():
+    origins_env = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("ORIGIN", "")
+    if not origins_env:
+        return []
+    return [origin.strip() for origin in origins_env.split(",") if origin.strip()]
+
+ALLOWED_ORIGINS = get_allowed_origins()
+
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --- Database Setup ---
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("VITE_DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set.")
 async_db_url = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://")
@@ -36,6 +40,28 @@ engine = create_async_engine(async_db_url, pool_pre_ping=True)
 AsyncSessionLocal = sessionmaker(
     bind=engine, class_=AsyncSession, expire_on_commit=False
 )
+
+def parse_example_project_ids(raw_ids: str | None) -> list[str]:
+    """
+    Parse a comma-separated string of UUIDs, ignoring invalid entries.
+    Used to expose a safe, curated list of public example projects
+    without requiring user ownership (bypasses Supabase RLS).
+    """
+    if not raw_ids:
+        return []
+
+    parsed_ids: list[str] = []
+    for raw in raw_ids.split(","):
+        trimmed = raw.strip()
+        if not trimmed:
+            continue
+        try:
+            parsed_ids.append(str(UUID(trimmed)))
+        except ValueError:
+            print(f"[examples] Skipping invalid project id: {trimmed}")
+    return parsed_ids
+
+EXAMPLE_PROJECT_IDS = parse_example_project_ids(os.environ.get("EXAMPLE_PROJECT_IDS"))
 
 
 # --- API Endpoints ---
@@ -455,6 +481,81 @@ async def get_metric_bounds(request: BoundsRequest):
         except Exception as e:
             print(f"Error fetching metric bounds: {e}")
             raise HTTPException(status_code=500, detail="Failed to calculate bounds")
+
+
+@app.get("/api/example-phenotypes")
+async def get_example_phenotypes(project_ids: str | None = None):
+    """
+    Public endpoint to showcase selected projects/phenotypes without requiring
+    the caller to own the project. Uses EXAMPLE_PROJECT_IDS (comma separated)
+    unless overridden by `project_ids` query param.
+    """
+    target_ids = parse_example_project_ids(project_ids) or EXAMPLE_PROJECT_IDS
+    if not target_ids:
+        return {"projects": []}
+
+    sql = text("""
+        WITH example_projects AS (
+            SELECT id, name, description
+            FROM projects
+            WHERE id = ANY(:project_ids :: uuid[])
+        ),
+        consensus_counts AS (
+            SELECT phenotype_id, COUNT(*) AS total_consensus
+            FROM phenotype_consensus_codes
+            GROUP BY phenotype_id
+        ),
+        search_term_counts AS (
+            SELECT phenotype_id, COUNT(*) AS total_terms
+            FROM phenotype_search_terms
+            GROUP BY phenotype_id
+        )
+        SELECT
+            p.id AS project_id,
+            p.name AS project_name,
+            p.description AS project_description,
+            ph.id AS phenotype_id,
+            ph.name AS phenotype_name,
+            ph.description AS phenotype_description,
+            ph.source AS source,
+            ph.updated_at AS updated_at,
+            COALESCE(cc.total_consensus, 0) AS consensus_codes,
+            COALESCE(st.total_terms, 0) AS search_terms
+        FROM example_projects p
+        LEFT JOIN phenotypes ph ON ph.project_id = p.id
+        LEFT JOIN consensus_counts cc ON cc.phenotype_id = ph.id
+        LEFT JOIN search_term_counts st ON st.phenotype_id = ph.id
+        ORDER BY p.name, ph.name;
+    """)
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(sql, {"project_ids": target_ids})
+        rows = result.fetchall()
+
+        projects: dict[str, dict] = {}
+        for row in rows:
+            project = projects.setdefault(
+                str(row.project_id),
+                {
+                    "id": str(row.project_id),
+                    "name": row.project_name,
+                    "description": row.project_description,
+                    "phenotypes": []
+                }
+            )
+
+            if row.phenotype_id:
+                project["phenotypes"].append({
+                    "id": str(row.phenotype_id),
+                    "name": row.phenotype_name,
+                    "description": row.phenotype_description,
+                    "source": row.source,
+                    "updated_at": row.updated_at,
+                    "consensus_codes": int(row.consensus_codes or 0),
+                    "search_terms": int(row.search_terms or 0)
+                })
+
+        return {"projects": list(projects.values())}
 
 
 if __name__ == "__main__":

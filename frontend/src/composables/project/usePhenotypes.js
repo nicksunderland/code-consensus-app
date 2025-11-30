@@ -1,8 +1,8 @@
 import { ref } from 'vue'
-import { supabase } from '@/composables/useSupabase.js'
-import { useProjects } from "@/composables/useProjects.js";
-import { useAuth } from "@/composables/useAuth.js";
-import { useNotifications } from './useNotifications'
+import { supabase } from '@/composables/shared/useSupabase.js'
+import { useProjects } from "@/composables/project/useProjects.js";
+import { useAuth } from "@/composables/auth/useAuth.js";
+import { useNotifications } from '../shared/useNotifications.js'
 
 // globals - these are set once in memory
 const phenotypes = ref([]);          // list for active project

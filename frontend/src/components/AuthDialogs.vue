@@ -6,7 +6,7 @@ import FloatLabel from 'primevue/floatlabel'
 import Password from 'primevue/password'
 import Button from 'primevue/button'
 import Divider from 'primevue/divider'
-import { useAuth } from '@/composables/useAuth.js'
+import { useAuth } from '@/composables/auth/useAuth.js'
 
 // --- composables ---
 const {

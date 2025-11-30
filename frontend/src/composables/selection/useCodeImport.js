@@ -1,6 +1,6 @@
-import { ref, computed, watch, onMounted } from 'vue'
-import {useCodeSystems} from "@/composables/useCodeSystems.js";
-import {supabase} from "@/composables/useSupabase.js";
+import { ref, computed, watch } from 'vue'
+import {useCodeSystems} from "@/composables/shared/useCodeSystems.js";
+import {supabase} from "@/composables/shared/useSupabase.js";
 
 // --- GLOBAL STATE (Singleton) ---
 const showImportDialog = ref(false)
@@ -12,10 +12,8 @@ const importedData = ref([])
 
 export function useCodeImport() {
     const { codeSystems, loadCodeSystems } = useCodeSystems()
-    // Initialize on first use
-    onMounted(async () => {
-        await loadCodeSystems()
-    })
+    // Ensure code systems are loaded even when invoked outside a component context
+    loadCodeSystems().catch(err => console.error("Failed to load code systems", err))
 
     // --- LOCAL STATE ---
     const step = ref(1)

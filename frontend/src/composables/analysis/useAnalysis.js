@@ -1,7 +1,7 @@
 import { ref, computed, watch, reactive } from "vue"
-import { apiClient } from '@/composables/apiClient.js'
-import { useNotifications } from './useNotifications'
-import { useCodeSelection } from "@/composables/useCodeSelection.js";
+import { apiClient } from '@/composables/shared/apiClient.js'
+import { useNotifications } from '../shared/useNotifications.js'
+import { useCodeSelection } from "@/composables/selection/useCodeSelection.js";
 
 // composables
 
@@ -66,8 +66,6 @@ function buildHeatmapSeries(results, metric) {
     const allY = [...new Set(results.map(r => r.code_i_str).filter(Boolean))]
     const allX = [...new Set(results.map(r => r.code_j_str).filter(Boolean))]
 
-    console.log("Y:", allY)
-    console.log("X:", allX)
 
     // 2. Build lookup table
     const lookup = {}
@@ -119,7 +117,6 @@ function buildHeatmapSeries(results, metric) {
         return {name: yLabel, data: row}
     })
 
-    console.log(series)
     return {series, xCategories: allX}
 }
 function metricTooltip(metric) {
@@ -165,7 +162,6 @@ export function useAnalysis() {
     }
 
     const fetchBounds = async () => {
-        console.log("Fetching bounds for metric:", selectedMetric.value)
         const ids = tableRows.value
             .filter(r => r.selected)
             .map(r => r.key)
@@ -176,8 +172,6 @@ export function useAnalysis() {
             const { data } = await apiClient.post("/api/get-metric-bounds", {
                 code_ids: ids
             })
-            console.log("Received bounds:", data)
-
             // Save both to cache
             boundsCache.value = data
 

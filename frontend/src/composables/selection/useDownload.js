@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
-import { supabase } from '@/composables/useSupabase.js'
-import { useNotifications } from '@/composables/useNotifications.js'
+import { supabase } from '@/composables/shared/useSupabase.js'
+import { useNotifications } from '@/composables/shared/useNotifications.js'
 
 // --- SHARED STATE (Singleton) ---
 // Defined outside the function so it is shared across components
@@ -55,19 +55,8 @@ export function useDownload() {
             // 2. Fetch selected consensus codes
             // -------------------------------
             const { data: consensus, error: consensusError } = await supabase
-                .from('phenotype_consensus')
-                .select(`
-                    id,
-                    code_id,
-                    orphan_id,
-                    comments,
-                    finalized_at,
-                    code:codes (
-                        code,
-                        description,
-                        system:code_systems(name, version, description, url)
-                    )
-                `)
+                .from('phenotype_consensus_codes')
+                .select('code_type, code_id, orphan_id, code_text, code_description, system_name, consensus_comments')
                 .eq('phenotype_id', phenotypeId)
 
             if (consensusError) {
@@ -75,33 +64,26 @@ export function useDownload() {
                 return
             }
 
-            // -------------------------------
-            // 3. Gather orphan IDs
-            // -------------------------------
-            const orphanIds = consensus
-                .filter(r => r.orphan_id)
-                .map(r => r.orphan_id)
+            const consensusList = consensus || []
 
-            let orphanMap = new Map()
+            const standardIds = consensusList
+                .filter(r => r.code_type === 'standard' && r.code_id)
+                .map(r => r.code_id)
 
-            if (orphanIds.length > 0) {
-                const { data: orphans, error: orphanError } = await supabase
-                    .from('user_code_selections_orphan')
-                    .select(`
-                        orphan_id,
-                        code,
-                        description,
-                        system_name,
-                        comment
-                    `)
-                    .in('orphan_id', orphanIds)
+            let codeMap = new Map()
 
-                if (orphanError) {
-                    emitError("Export Failed", "Unable to load orphan codes.")
+            if (standardIds.length > 0) {
+                const { data: codesData, error: codeError } = await supabase
+                    .from('codes')
+                    .select('id, code, description, code_systems(name, version, description, url)')
+                    .in('id', standardIds)
+
+                if (codeError) {
+                    emitError("Export Failed", "Unable to load code metadata.")
                     return
                 }
 
-                orphans.forEach(o => orphanMap.set(o.orphan_id, o))
+                codesData.forEach(c => codeMap.set(c.id, c))
             }
 
             // --------------------------------------------
@@ -117,45 +99,37 @@ export function useDownload() {
             // --------------------------------------------
             // 5. Merge consensus rows into unified structure
             // --------------------------------------------
-            const mergedCodes = consensus.map(row => {
-                // Normal code
-                if (row.code_id && row.code) {
+            const mergedCodes = consensusList.map(row => {
+                const isOrphan = row.code_type === 'orphan' || !!row.orphan_id;
+
+                if (!isOrphan) {
+                    const detail = codeMap.get(row.code_id);
                     return {
-                        code: row.code.code,
-                        description: row.code.description,
-                        system: row.code.system?.name,
-                        system_version: row.code.system?.version,
-                        system_description: row.code.system?.description,
-                        system_url: row.code.system?.url,
-                        consensus_comments: row.comments,
-                        finalized_at: row.finalized_at,
+                        code: detail?.code || row.code_text,
+                        description: detail?.description || row.code_description,
+                        system: detail?.code_systems?.name || row.system_name,
+                        system_version: detail?.code_systems?.version || "N/A",
+                        system_description: detail?.code_systems?.description || "",
+                        system_url: detail?.code_systems?.url || "",
+                        consensus_comments: row.consensus_comments || "",
+                        finalized_at: null,
                         is_orphan: false
                     }
                 }
 
-                // Orphan code
-                if (row.orphan_id) {
-                    const o = orphanMap.get(row.orphan_id)
-                    if (!o) return null
-
-                    // Use real system if exists
-                    const sys = systemLookup.get(o.system_name)
-
-                    return {
-                        code: o.code,
-                        description: o.description,
-                        system: o.system_name || "Custom",
-                        system_version: sys?.version || "N/A",
-                        system_description:
-                            sys?.description || "User-submitted custom code",
-                        system_url: sys?.url || "",
-                        consensus_comments: o.comment || row.comments,
-                        finalized_at: row.finalized_at,
-                        is_orphan: true
-                    }
+                const sys = systemLookup.get(row.system_name);
+                return {
+                    code: row.code_text,
+                    description: row.code_description,
+                    system: row.system_name || "Custom",
+                    system_version: sys?.version || "N/A",
+                    system_description:
+                        sys?.description || "User-submitted custom code",
+                    system_url: sys?.url || "",
+                    consensus_comments: row.consensus_comments || "",
+                    finalized_at: null,
+                    is_orphan: true
                 }
-
-                return null
             }).filter(Boolean)
 
             // --------------------------------------------
@@ -183,10 +157,9 @@ export function useDownload() {
             // --------------------------------------------
             // 7. Determine finalized status
             // --------------------------------------------
-            const finalizedDate =
-                mergedCodes.length > 0 ? mergedCodes[0].finalized_at : null
+            const finalizedDate = null
 
-            isPhenotypeFinalized.value = !!finalizedDate
+            isPhenotypeFinalized.value = false
 
             // --------------------------------------------
             // 8. Build export data object

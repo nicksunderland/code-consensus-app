@@ -1,6 +1,6 @@
 // useCodeSystems.js
 import { ref } from 'vue'
-import { supabase } from "@/composables/useSupabase.js";
+import { supabase } from "@/composables/shared/useSupabase.js";
 
 const codeSystems = ref([])
 const isLoaded = ref(false)

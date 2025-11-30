@@ -9,7 +9,7 @@ export default {
 import { computed } from 'vue';
 // IMPORT EdgeLabelRenderer here
 import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@vue-flow/core';
-import { usePhenoFlow, OPERATORS } from "@/composables/usePhenoFlow.js";
+import { usePhenoFlow, OPERATORS } from "@/composables/project/usePhenoFlow.js";
 
 const props = defineProps({
   id: { type: String, required: true },

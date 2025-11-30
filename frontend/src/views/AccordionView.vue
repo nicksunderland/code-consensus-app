@@ -16,8 +16,8 @@ import DerivedPhenotypes from "@/views/PhenoFlowView.vue";
 import PhenotypeDefinition from "@/components/PhenotypeDefinition.vue";
 
 // Import Composables specific to tab logic
-import { useAnalysis } from "@/composables/useAnalysis.js";
-import { useDownload } from "@/composables/useDownload.js";
+import { useAnalysis } from "@/composables/analysis/useAnalysis.js";
+import { useDownload } from "@/composables/selection/useDownload.js";
 
 // --- TAB LOGIC ---
 const { isAnalysisActive } = useAnalysis();

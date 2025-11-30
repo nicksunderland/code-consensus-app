@@ -8,8 +8,8 @@ import Slider from 'primevue/slider';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import 'primeicons/primeicons.css';
-import { useAnalysis } from "@/composables/useAnalysis.js";
-import {useCodeSelection} from "@/composables/useCodeSelection.js";
+import { useAnalysis } from "@/composables/analysis/useAnalysis.js";
+import {useCodeSelection} from "@/composables/selection/useCodeSelection.js";
 
 // Destructure composable to get auto-unwrapped refs
 const {
