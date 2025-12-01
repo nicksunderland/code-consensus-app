@@ -293,7 +293,7 @@ onMounted(fetchExamples);
                       <Tag
                         icon="pi pi-check-circle"
                         severity="success"
-                        :value="`${metricVal(pheno, 'consensus_total', pheno.consensus_codes)} consensus codes`"
+                        :value="`${pheno.consensus_codes || 0} consensus codes`"
                       />
                       <Tag
                         v-if="pheno.source"
@@ -605,6 +605,7 @@ onMounted(fetchExamples);
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+  white-space: nowrap;
 }
 
 .accordion-body {
