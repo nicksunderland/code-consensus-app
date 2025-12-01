@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, onMounted } from 'vue';
 import Accordion from 'primevue/accordion';
 import AccordionPanel from 'primevue/accordionpanel';
 import AccordionHeader from 'primevue/accordionheader';
@@ -14,14 +14,18 @@ import Analysis from "@/components/Analysis.vue";
 import Download from "@/components/Download.vue";
 import DerivedPhenotypes from "@/views/PhenoFlowView.vue";
 import PhenotypeDefinition from "@/components/PhenotypeDefinition.vue";
+import { useCodeSelection } from "@/composables/selection/useCodeSelection.js";
 
 // Import Composables specific to tab logic
 import { useAnalysis } from "@/composables/analysis/useAnalysis.js";
 import { useDownload } from "@/composables/selection/useDownload.js";
+import { usePhenotypes } from "@/composables/project/usePhenotypes.js";
 
 // --- TAB LOGIC ---
 const { isAnalysisActive } = useAnalysis();
 const { isDownloadActive } = useDownload();
+const { rehydrateCurrentPhenotype } = useCodeSelection();
+const { currentPhenotype } = usePhenotypes();
 
 const TAB_INDEXES = {
     PHENOTYPE_DEFINITION: '0',
@@ -69,13 +73,17 @@ const panels = [
         value: TAB_INDEXES.DOWNLOAD,
         title: 'Download',
         eyebrow: 'Step 5',
-        subtitle: 'Export definitions for documentation or ETL.',
+        subtitle: 'Export phenotype codes and meta-data.',
         icon: 'pi-download',
         component: Download
     }
 ];
 
 const activeTabs = ref([...DEFAULT_OPEN]);
+
+onMounted(() => {
+  rehydrateCurrentPhenotype();
+});
 
 watch(activeTabs, (newTabs) => {
   const currentTabs = newTabs || [];
@@ -87,6 +95,10 @@ watch(activeTabs, (newTabs) => {
 
 <template>
   <div class="accordion-container">
+    <div class="active-phenotype" v-if="currentPhenotype?.name">
+      <p class="eyebrow">Active phenotype</p>
+      <h2>{{ currentPhenotype.name }}</h2>
+    </div>
     <Accordion v-model:value="activeTabs" multiple>
       <AccordionPanel v-for="panel in panels" :key="panel.value" :value="panel.value">
           <AccordionHeader>
@@ -114,11 +126,21 @@ watch(activeTabs, (newTabs) => {
 
 <style scoped>
 .accordion-container {
-  padding: 3rem 1.5rem 0 1.5rem;
+  padding: 2rem 1.5rem 0 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 5rem;
+  gap: 2.5rem;
   min-height: 85vh;
+}
+
+:deep(.active-phenotype h2) {
+  margin: 0.2rem 0 0;
+}
+
+.active-phenotype {
+  max-width: 1200px;
+  margin: 0 auto 0.25rem auto;
+  text-align: center;
 }
 
 :deep(.p-accordion-panel) {

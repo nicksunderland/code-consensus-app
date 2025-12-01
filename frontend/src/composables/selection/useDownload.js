@@ -97,6 +97,57 @@ export function useDownload() {
             allSystems?.forEach(sys => systemLookup.set(sys.name, sys))
 
             // --------------------------------------------
+            // 4. Compute agreement stats across user selections
+            // --------------------------------------------
+            let selectionRows = [];
+            try {
+                const { data: selectionData, error: selectionError } = await supabase
+                    .from('user_code_selections')
+                    .select('code_id, orphan_id, is_selected, user_id')
+                    .eq('phenotype_id', phenotypeId);
+                if (selectionError) throw selectionError;
+                selectionRows = selectionData || [];
+            } catch (err) {
+                // Non-fatal for examples/non-members; skip agreement if RLS blocks
+                selectionRows = [];
+            }
+
+            let totalRatings = 0;
+            let totalSelected = 0;
+            let pSum = 0;
+            let items = 0;
+            let pBar = 0;
+            let kappa = 0;
+
+            if (selectionRows.length) {
+                const agreeMap = new Map();
+                (selectionRows || []).forEach((row) => {
+                    const key = String(row.code_id ?? row.orphan_id);
+                    if (!agreeMap.has(key)) agreeMap.set(key, []);
+                    agreeMap.get(key).push(!!row.is_selected);
+                });
+
+                agreeMap.forEach((votes) => {
+                    const n = votes.length;
+                    if (n < 2) return; // need at least two raters
+                    const nSel = votes.filter(Boolean).length;
+                    const nNot = n - nSel;
+                    const p_i = ((nSel * (nSel - 1)) + (nNot * (nNot - 1))) / (n * (n - 1));
+                    pSum += p_i;
+                    items += 1;
+                    totalRatings += n;
+                    totalSelected += nSel;
+                });
+
+                pBar = items ? pSum / items : 0;
+                const pYes = totalRatings ? totalSelected / totalRatings : 0;
+                const pNo = 1 - pYes;
+                const pE = (pYes * pYes) + (pNo * pNo);
+                const denom = 1 - pE;
+                kappa = denom ? (pBar - pE) / denom : 0;
+            }
+
+            // --------------------------------------------
             // 5. Merge consensus rows into unified structure
             // --------------------------------------------
             const mergedCodes = consensusList.map(row => {
@@ -176,7 +227,10 @@ export function useDownload() {
                     finalized_at:
                         finalizedDate ||
                         "WARNING: Codes are PRE-FINALIZED (Draft Status)",
-                    status: !!finalizedDate ? "Finalized" : "Draft"
+                    status: !!finalizedDate ? "Finalized" : "Draft",
+                    agreement_percent: Math.round(pBar * 100),
+                    kappa: Number.isFinite(kappa) ? kappa.toFixed(3) : '0.000',
+                    agreement_items: items
                 },
                 code_systems: uniqueSystems,
                 stats: {

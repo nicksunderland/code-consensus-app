@@ -45,6 +45,19 @@ describe('useDownload', () => {
           select: () => Promise.resolve({ data: [], error: null })
         }
       }
+      if (table === 'user_code_selections') {
+        return {
+          select: () => ({
+            eq: () => Promise.resolve({
+              data: [
+                { code_id: 1, orphan_id: null, is_selected: true, user_id: 'u1' },
+                { code_id: 1, orphan_id: null, is_selected: true, user_id: 'u2' },
+              ],
+              error: null
+            })
+          })
+        }
+      }
       return { select: () => Promise.resolve({ data: null, error: null }) }
     })
 

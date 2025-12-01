@@ -316,7 +316,6 @@ onMounted(async () => {
     }
 
     .search-hit {
-      box-shadow: inset 0 0 0 1px #0ea5e9;
       background: #e0f2fe;
     }
 

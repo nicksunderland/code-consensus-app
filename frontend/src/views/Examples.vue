@@ -108,6 +108,86 @@ const regexCount = (pheno) => {
   return terms.filter(t => t.is_regex).length;
 };
 
+const buildExportPayload = (pheno) => {
+  const state = phenoState(pheno.id).data;
+  if (!state) return null;
+  const metrics = state.metrics || {};
+  const codes = state.consensus_codes || [];
+  return {
+    metadata: {
+      id: pheno.id,
+      name: pheno.name,
+      description: pheno.description || 'No description provided.',
+      project: pheno.project_name || 'Published example',
+      source: pheno.source || 'N/A',
+      generated_at: new Date().toISOString(),
+      consensus_codes: metrics.consensus_total || codes.length,
+      agreement_percent: agreementPercent(metrics),
+      kappa: metrics.agreement?.kappa ?? null
+    },
+    codes: codes.map(c => ({
+      code: c.code,
+      description: c.description,
+      system: c.system,
+      consensus_comments: c.consensus_comments || ''
+    }))
+  };
+};
+
+const downloadExample = async (pheno, format = 'text') => {
+  const state = phenoState(pheno.id);
+  if (!state.data) {
+    await loadPhenotype(pheno.id, true);
+  }
+  const payload = buildExportPayload(phenoState(pheno.id).data?.phenotype || pheno);
+  if (!payload) return;
+
+  let content = '';
+  let ext = 'txt';
+  if (format === 'json') {
+    content = JSON.stringify(payload, null, 2);
+    ext = 'json';
+  } else if (format === 'yaml') {
+    const m = payload.metadata;
+    content += `metadata:\n`;
+    Object.entries(m).forEach(([k, v]) => {
+      content += `  ${k}: "${v ?? ''}"\n`;
+    });
+    content += `codes:\n`;
+    payload.codes.forEach(c => {
+      content += `  - code: "${c.code || ''}"\n`;
+      content += `    system: "${c.system || ''}"\n`;
+      content += `    description: "${c.description || ''}"\n`;
+      if (c.consensus_comments) content += `    consensus_comments: "${c.consensus_comments}"\n`;
+    });
+    ext = 'yaml';
+  } else {
+    const m = payload.metadata;
+    content += `# Phenotype: ${m.name}\n# Project: ${m.project}\n# Generated: ${m.generated_at}\n`;
+    content += `# Consensus codes: ${m.consensus_codes}\n# Agreement: ${m.agreement_percent}% (kappa ${m.kappa ?? 'n/a'})\n\n`;
+    content += `CODE\tSYSTEM\tDESCRIPTION\tCOMMENTS\n`;
+    payload.codes.forEach(c => {
+      content += `${c.code || ''}\t${c.system || ''}\t${c.description || ''}\t${c.consensus_comments || ''}\n`;
+    });
+  }
+
+  const mime =
+    format === 'json'
+      ? 'application/json'
+      : format === 'yaml'
+        ? 'text/yaml'
+        : 'text/plain';
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${pheno.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.${ext}`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
 onMounted(fetchExamples);
 </script>
 
@@ -310,6 +390,11 @@ onMounted(fetchExamples);
                         <div>
                           <p class="eyebrow">Consensus codes</p>
                           <h4>Finalized code list and notes</h4>
+                        </div>
+                        <div class="download-actions">
+                          <Button label="TXT" size="small" text icon="pi pi-download" @click.stop="downloadExample(pheno, 'text')" />
+                          <Button label="YAML" size="small" text icon="pi pi-file" @click.stop="downloadExample(pheno, 'yaml')" />
+                          <Button label="JSON" size="small" text icon="pi pi-code" @click.stop="downloadExample(pheno, 'json')" />
                         </div>
                       </div>
 

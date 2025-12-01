@@ -139,11 +139,11 @@ const tableRows = computed(() => {
     }
     return Array.from(rowsMap.values());
 });
-const isSaving = ref(false);
-const isFinalized = ref(false);
-const isReviewMode = ref(false);
-const teamSelections = ref({}); // Format: { codeId: { userId: { is_selected, comment, email } } }
-const projectMembers = ref([]); // List of users found in the dataset
+    const isSaving = ref(false);
+    const isFinalized = ref(false);
+    const isReviewMode = ref(false);
+    const teamSelections = ref({}); // Format: { codeId: { userId: { is_selected, comment, email } } }
+    const projectMembers = ref([]); // List of users found in the dataset
 let watchersInitialized = false;
 
 // ---------------------------------------------
@@ -543,8 +543,8 @@ export function useCodeSelection() {
         if (!phenotypeId) return;
 
         const { data, error } = await supabase
-            .from('phenotype_consensus_codes')
-            .select('code_type, code_id, orphan_id, consensus_comments')
+            .from('user_code_selections')
+            .select('code_type, code_id, orphan_id, consensus_comments, is_consensus')
             .eq('phenotype_id', phenotypeId);
 
         if (error) {
@@ -557,7 +557,7 @@ export function useCodeSelection() {
         (data || []).forEach(row => {
             const key = String(row.code_id ?? row.orphan_id);
             map[key] = {
-                selected: true,
+                selected: !!row.is_consensus,
                 comment: row.consensus_comments || ''
             };
         });
@@ -593,27 +593,64 @@ export function useCodeSelection() {
 
             const existingKeys = Object.keys(consensusState.value || {});
             const allKeys = new Set([...existingKeys, ...Array.from(desiredMap.keys())]);
+            const existingComments = { ...(consensusState.value || {}) };
 
-            for (const key of allKeys) {
+            const standardRows = [];
+            const orphanRows = [];
+
+            allKeys.forEach((key) => {
                 const isOrphan = typeof key === 'string' && key.startsWith('ORPHAN');
-                const comment = desiredMap.get(key) || '';
                 const isSelected = desiredMap.has(key);
+                const comment = desiredMap.get(key) ?? existingComments[key]?.comment ?? '';
+                if (isOrphan) {
+                    orphanRows.push({
+                        phenotype_id: phenotypeId,
+                        user_id: userId,
+                        code_type: 'orphan',
+                        orphan_id: key,
+                        code_text: null,
+                        code_description: null,
+                        system_name: null,
+                        is_consensus: isSelected,
+                        consensus_comments: comment
+                    });
+                } else {
+                    const codeId = parseInt(key);
+                    if (!Number.isNaN(codeId)) {
+                        standardRows.push({
+                            phenotype_id: phenotypeId,
+                            user_id: userId,
+                            code_type: 'standard',
+                            code_id: codeId,
+                            is_consensus: isSelected,
+                            consensus_comments: comment
+                        });
+                    }
+                }
+            });
 
-                const params = {
-                    p_phenotype_id: phenotypeId,
-                    p_code_type: isOrphan ? 'orphan' : 'standard',
-                    p_code_id: isOrphan ? null : parseInt(key),
-                    p_orphan_id: isOrphan ? key : null,
-                    p_consensus_comments: comment,
-                    p_is_consensus: isSelected
-                };
+            if (standardRows.length > 0) {
+                console.debug('[consensus] upsert standard', standardRows);
+                const { error } = await supabase
+                    .from('user_code_selections')
+                    .upsert(standardRows, { onConflict: 'phenotype_id, code_id, user_id' });
+                if (error) throw error;
+            }
 
-                const { error } = await supabase.rpc('set_code_consensus', params);
+            if (orphanRows.length > 0) {
+                console.debug('[consensus] upsert orphan', orphanRows);
+                const { error } = await supabase
+                    .from('user_code_selections')
+                    .upsert(orphanRows, { onConflict: 'phenotype_id, orphan_id, user_id' });
                 if (error) throw error;
             }
 
             consensusState.value = Object.fromEntries(
-                Array.from(desiredMap.entries()).map(([k, comment]) => [k, { selected: true, comment }])
+                Array.from(allKeys).map((k) => {
+                    const selected = desiredMap.has(k);
+                    const comment = desiredMap.get(k) ?? existingComments[k]?.comment ?? '';
+                    return [k, { selected, comment }];
+                })
             );
             lastSavedConsensusHash.value = getConsensusHash();
 
@@ -623,6 +660,7 @@ export function useCodeSelection() {
             emitSuccess(action, `${action} consensus for ${finalRows.length} codes.`);
 
             await resetDownloadCache(phenotypeId);
+            await fetchConsensus();
 
         } catch (err) {
             console.error(err);
@@ -733,6 +771,18 @@ export function useCodeSelection() {
         emitSuccess("Unlocked", "Consensus codes are now editable.");
     }
 
+    const rehydrateCurrentPhenotype = async () => {
+        const pid = currentPhenotype.value?.id;
+        if (!pid) return;
+        try {
+            await fetchSearchStrategy(pid);
+            await fetchUserSelections();
+            await fetchConsensus();
+        } catch (e) {
+            console.error("Error rehydrating phenotype data", e);
+        }
+    };
+
     // ------------------------------------------------------------
     // COMPOSABLE WATCHERS
     // ------------------------------------------------------------
@@ -805,6 +855,7 @@ export function useCodeSelection() {
         clearSelectionState,
         saveConsensus,
         unlockConsensus,
-        clearImportedCodes
+        clearImportedCodes,
+        rehydrateCurrentPhenotype
     }
 }

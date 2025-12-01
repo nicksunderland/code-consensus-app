@@ -11,7 +11,7 @@ import 'primeicons/primeicons.css';
 import { useAnalysis } from "@/composables/analysis/useAnalysis.js";
 import {useCodeSelection} from "@/composables/selection/useCodeSelection.js";
 import Tooltip from 'primevue/tooltip';
-import OverlayPanel from 'primevue/overlaypanel';
+import Popover from 'primevue/popover';
 
 // Destructure composable to get auto-unwrapped refs
 const {
@@ -28,7 +28,9 @@ const {
 
 const suppressionRef = ref();
 const showSuppression = (event) => {
-  suppressionRef.value.toggle(event);
+  if (suppressionRef.value) {
+    suppressionRef.value.toggle(event);
+  }
 };
 
 </script>
@@ -89,14 +91,14 @@ const showSuppression = (event) => {
             />
             <div class="suppression-note">
               <Button text size="small" icon="pi pi-info-circle" @click="showSuppression" aria-label="Suppression info" />
-              <span>Counts under 100 are suppressed.</span>
-              <OverlayPanel ref="suppressionRef">
+              <span>Counts under 100 are suppressed across metrics.</span>
+              <Popover ref="suppressionRef">
                 <div class="suppression-content">
                   <p><strong>Low-number suppression</strong></p>
                   <p>Counts below 100 are hidden to protect privacy. This applies to all diagnostics and may show gaps or zeros in the heatmap.</p>
                   <a href="https://community.ukbiobank.ac.uk/hc/en-gb/articles/24842092764061-Reporting-small-numbers-in-results-in-research-outputs-using-UK-Biobank-data" target="_blank" rel="noreferrer">UK Biobank guidance</a>
                 </div>
-              </OverlayPanel>
+              </Popover>
             </div>
           </div>
         </Panel>
