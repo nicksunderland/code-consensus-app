@@ -368,8 +368,15 @@ async def get_cooccurrence(request: CooccurrenceRequest):
     if not request.code_ids:
         return {"results": []}
 
-    if request.metric not in ("jaccard", "lift"):
-        raise HTTPException(status_code=400, detail="Invalid metric. Must be 'jaccard' or 'lift'.")
+    metric_map = {
+        "jaccard": "jaccard",
+        "lift": "lift",
+        "pair_count": "pair_count"
+    }
+    if request.metric not in metric_map:
+        raise HTTPException(status_code=400, detail="Invalid metric. Must be 'jaccard', 'lift', or 'pair_count'.")
+
+    metric_column = metric_map[request.metric]
 
     # SQL query to get co-occurring codes
     sql = text(f"""
@@ -390,12 +397,12 @@ async def get_cooccurrence(request: CooccurrenceRequest):
         LEFT JOIN LATERAL (
             SELECT
                 CASE WHEN cc.code_i = ic.code_id THEN cc.code_j ELSE cc.code_i END AS other_code,
-                cc.{request.metric} AS metric_value
+                cc.{metric_column} AS metric_value
             FROM code_cooccurrence cc
             WHERE (cc.code_i = ic.code_id OR cc.code_j = ic.code_id)
-              AND cc.{request.metric} >= :min_threshold
-              AND cc.{request.metric} <= :max_threshold
-            ORDER BY cc.{request.metric} DESC
+              AND cc.{metric_column} >= :min_threshold
+              AND cc.{metric_column} <= :max_threshold
+            ORDER BY cc.{metric_column} DESC
         ) cc ON TRUE
         LEFT JOIN codes c_i ON c_i.id = ic.code_id
         LEFT JOIN codes c_j ON c_j.id = cc.other_code
@@ -451,14 +458,16 @@ async def get_metric_bounds(request: BoundsRequest):
     if not request.code_ids:
         return {
             "jaccard": {"min": 0.0, "max": 1.0},
-            "lift": {"min": 0.0, "max": 10.0}
+            "lift": {"min": 0.0, "max": 10.0},
+            "pair_count": {"min": 0.0, "max": 100.0}
         }
 
     # 1. SQL: Fetches bounds for BOTH metrics in one go
     sql = text("""
             SELECT 
                 MIN(jaccard) as min_j, MAX(jaccard) as max_j,
-                MIN(lift) as min_l, MAX(lift) as max_l
+                MIN(lift) as min_l, MAX(lift) as max_l,
+                MIN(pair_count) as min_c, MAX(pair_count) as max_c
             FROM code_cooccurrence
             WHERE code_i = ANY(:code_ids :: bigint[]) 
                OR code_j = ANY(:code_ids :: bigint[])
@@ -472,10 +481,13 @@ async def get_metric_bounds(request: BoundsRequest):
             max_j = float(row.max_j) if row.max_j is not None else 1.0
             min_l = float(row.min_l) if row.min_l is not None else 0.0
             max_l = float(row.max_l) if row.max_l is not None else 10.0
+            min_c = float(row.min_c) if row.min_c is not None else 0.0
+            max_c = float(row.max_c) if row.max_c is not None else 100.0
 
             return {
                 "jaccard": {"min": min_j, "max": max_j},
-                "lift": {"min": min_l, "max": max_l}
+                "lift": {"min": min_l, "max": max_l},
+                "pair_count": {"min": min_c, "max": max_c}
             }
 
         except Exception as e:
@@ -556,6 +568,210 @@ async def get_example_phenotypes(project_ids: str | None = None):
                 })
 
         return {"projects": list(projects.values())}
+
+
+@app.get("/api/example-phenotypes/{phenotype_id}")
+async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | None = None):
+    """
+    Returns consensus codes and search-term context for a single phenotype that
+    belongs to the curated example projects list. This bypasses RLS but is
+    constrained to EXAMPLE_PROJECT_IDS (or the explicit `project_ids` override).
+    """
+    target_ids = parse_example_project_ids(project_ids) or EXAMPLE_PROJECT_IDS
+    if not target_ids:
+        raise HTTPException(status_code=404, detail="No example projects configured.")
+
+    try:
+        phenotype_uuid = str(UUID(phenotype_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid phenotype id.")
+
+    phenotype_sql = text("""
+        SELECT
+            ph.id,
+            ph.name,
+            ph.description,
+            ph.source,
+            ph.updated_at,
+            ph.project_id,
+            p.name AS project_name
+        FROM phenotypes ph
+        JOIN projects p ON p.id = ph.project_id
+        WHERE ph.id = :phenotype_id
+          AND p.id = ANY(:project_ids :: uuid[])
+    """)
+
+    consensus_sql = text("""
+        SELECT
+            code_type,
+            code_id,
+            orphan_id,
+            code_text,
+            code_description,
+            system_name,
+            consensus_comments
+        FROM phenotype_consensus_codes
+        WHERE phenotype_id = :phenotype_id
+        ORDER BY system_name, code_text
+    """)
+
+    search_terms_sql = text("""
+        SELECT
+            pst.term,
+            pst.is_regex,
+            pst.target_columns,
+            pst.system_ids,
+            pst.row_order,
+            COALESCE(array_remove(array_agg(cs.name), NULL), '{}') AS system_names
+        FROM phenotype_search_terms pst
+        LEFT JOIN LATERAL unnest(pst.system_ids) sid ON TRUE
+        LEFT JOIN code_systems cs ON cs.id = sid
+        WHERE pst.phenotype_id = :phenotype_id
+        GROUP BY pst.id, pst.row_order
+        ORDER BY pst.row_order
+    """)
+
+    system_breakdown_sql = text("""
+        SELECT system_name, COUNT(*) AS total
+        FROM phenotype_consensus_codes
+        WHERE phenotype_id = :phenotype_id
+        GROUP BY system_name
+        ORDER BY total DESC
+    """)
+
+    search_import_counts_sql = text("""
+        SELECT
+            COUNT(DISTINCT COALESCE(code_id::text, orphan_id)) FILTER (WHERE found_in_search) AS search_codes,
+            COUNT(DISTINCT COALESCE(code_id::text, orphan_id)) FILTER (WHERE imported) AS imported_codes
+        FROM user_code_selections
+        WHERE phenotype_id = :phenotype_id
+    """)
+
+    async with AsyncSessionLocal() as session:
+        # Validate phenotype belongs to curated projects
+        ph_result = await session.execute(
+            phenotype_sql,
+            {"phenotype_id": phenotype_uuid, "project_ids": target_ids},
+        )
+        ph_row = ph_result.fetchone()
+        if not ph_row:
+            raise HTTPException(status_code=404, detail="Phenotype not available in examples.")
+
+        consensus_rows = await session.execute(
+            consensus_sql, {"phenotype_id": phenotype_uuid}
+        )
+        consensus_codes = [
+            {
+                "code_type": row.code_type,
+                "code_id": row.code_id,
+                "orphan_id": row.orphan_id,
+                "code": row.code_text,
+                "description": row.code_description,
+                "system": row.system_name,
+                "consensus_comments": row.consensus_comments,
+            }
+            for row in consensus_rows.fetchall()
+        ]
+
+        term_rows = await session.execute(
+            search_terms_sql, {"phenotype_id": phenotype_uuid}
+        )
+        search_terms = [
+            {
+                "term": row.term,
+                "is_regex": row.is_regex,
+                "target_columns": row.target_columns,
+                "system_ids": row.system_ids or [],
+                "system_names": row.system_names or [],
+                "row_order": row.row_order,
+            }
+            for row in term_rows.fetchall()
+        ]
+
+        system_rows = await session.execute(
+            system_breakdown_sql, {"phenotype_id": phenotype_uuid}
+        )
+        systems = [
+            {"name": row.system_name, "count": int(row.total)}
+            for row in system_rows.fetchall()
+            if row.system_name is not None
+        ]
+
+        search_import_counts = await session.execute(
+            search_import_counts_sql, {"phenotype_id": phenotype_uuid}
+        )
+        counts_row = search_import_counts.fetchone()
+        search_codes = int(counts_row.search_codes or 0)
+        imported_codes = int(counts_row.imported_codes or 0)
+
+        agreement_sql = text("""
+            SELECT
+                code_type,
+                code_id,
+                orphan_id,
+                COUNT(*) AS raters,
+                COUNT(*) FILTER (WHERE is_selected) AS selected
+            FROM user_code_selections
+            WHERE phenotype_id = :phenotype_id
+            GROUP BY code_type, code_id, orphan_id
+        """)
+
+        agreement_rows = await session.execute(
+            agreement_sql, {"phenotype_id": phenotype_uuid}
+        )
+
+        total_ratings = 0
+        total_selected = 0
+        p_sum = 0.0
+        items = 0
+
+        for row in agreement_rows.fetchall():
+            n = int(row.raters or 0)
+            n_sel = int(row.selected or 0)
+            if n < 2:
+                continue  # need at least two raters for agreement
+            n_not = n - n_sel
+            # Fleiss-style per-item agreement for binary categories
+            p_i = ((n_sel * (n_sel - 1)) + (n_not * (n_not - 1))) / (n * (n - 1))
+            p_sum += float(p_i)
+            items += 1
+            total_ratings += n
+            total_selected += n_sel
+
+        p_bar = (p_sum / items) if items else 0.0
+        p_yes = (total_selected / total_ratings) if total_ratings else 0.0
+        p_no = 1.0 - p_yes
+        p_e = (p_yes * p_yes) + (p_no * p_no)
+        kappa_den = (1 - p_e)
+        kappa = (p_bar - p_e) / kappa_den if kappa_den != 0 else 0.0
+
+        agreement = {
+            "items": items,
+            "agreement": round(p_bar, 4),
+            "kappa": round(kappa, 4)
+        }
+
+        return {
+            "phenotype": {
+                "id": str(ph_row.id),
+                "name": ph_row.name,
+                "description": ph_row.description,
+                "source": ph_row.source,
+                "updated_at": ph_row.updated_at,
+                "project_id": str(ph_row.project_id),
+                "project_name": ph_row.project_name,
+            },
+            "metrics": {
+                "consensus_total": len(consensus_codes),
+                "search_terms": len(search_terms),
+                "system_breakdown": systems,
+                "search_codes": search_codes,
+                "imported_codes": imported_codes,
+                "agreement": agreement,
+            },
+            "consensus_codes": consensus_codes,
+            "search_terms": search_terms,
+        }
 
 
 if __name__ == "__main__":

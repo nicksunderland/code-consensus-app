@@ -11,7 +11,7 @@ vi.mock('@/composables/shared/useNotifications.js', () => ({
 
 import { useDownload } from './useDownload.js'
 
-describe.skip('useDownload', () => {
+describe('useDownload', () => {
   it('merges consensus codes with systems', async () => {
     supabaseModule.supabase.from.mockImplementation((table) => {
       if (table === 'phenotypes') {
@@ -48,9 +48,9 @@ describe.skip('useDownload', () => {
       return { select: () => Promise.resolve({ data: null, error: null }) }
     })
 
-    const { fetchExportData, rawData, hasCodes } = useDownload()
+    const { fetchExportData, hasCodes, displayContent } = useDownload()
     await fetchExportData('ph1')
-    expect(rawData.value).toBeTruthy()
     expect(hasCodes.value).toBe(true)
+    expect(displayContent.value.length).toBeGreaterThan(0)
   })
 })

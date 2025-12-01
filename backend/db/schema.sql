@@ -79,6 +79,7 @@ CREATE TABLE code_cooccurrence (
     code_j BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
     jaccard NUMERIC(5,3) DEFAULT 0,
     lift NUMERIC(5,3) DEFAULT 0,
+    pair_count BIGINT DEFAULT 0,
 
     CONSTRAINT code_pair_unique UNIQUE (code_i, code_j),
     CONSTRAINT code_order_check CHECK (code_i < code_j)
@@ -636,6 +637,7 @@ COMMENT ON COLUMN user_code_selections.comment IS 'Individual user comment about
 COMMENT ON COLUMN user_code_selections.is_consensus IS 'Whether this code is part of final consensus (duplicated across all users)';
 COMMENT ON COLUMN user_code_selections.consensus_comments IS 'Team decision notes about consensus (duplicated across all users)';
 COMMENT ON TABLE code_cooccurrence IS 'Symmetric storage: code_i < code_j to avoid duplicates';
+COMMENT ON COLUMN code_cooccurrence.pair_count IS 'Suppressed/rounded counts of individuals with both codes';
 COMMENT ON COLUMN projects.member_ids IS 'Array of member user IDs for fast access checks';
 COMMENT ON COLUMN projects.member_data IS 'JSONB array with full member details';
 

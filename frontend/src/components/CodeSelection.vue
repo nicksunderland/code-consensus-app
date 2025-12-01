@@ -40,7 +40,8 @@ const {
   updateConsensusComment,
   saveConsensus,
   unlockConsensus,
-  clearImportedCodes
+  clearImportedCodes,
+  agreementStats
 } = useCodeSelection()
 
 
@@ -54,6 +55,35 @@ const confirm = useConfirm();
 const { user } = useAuth();
 const { currentProject } = useProjects();
 const { currentPhenotype } = usePhenotypes();
+const hasRows = computed(() => tableRows.value.length > 0);
+
+const agreementPercent = computed(() => Math.round((agreementStats.value?.agreement || 0) * 100));
+const agreementKappa = computed(() => agreementStats.value?.kappa || 0);
+const agreementItems = computed(() => agreementStats.value?.items || 0);
+
+const agreementSeverity = computed(() => {
+    const pct = agreementPercent.value;
+    if (pct >= 80) return 'success';
+    if (pct >= 60) return 'info';
+    if (pct >= 40) return 'warning';
+    return 'danger';
+});
+
+const agreementFillColor = computed(() => {
+    const severity = agreementSeverity.value;
+    if (severity === 'success') return 'linear-gradient(90deg, #22c55e, #16a34a)';
+    if (severity === 'info') return 'linear-gradient(90deg, #38bdf8, #0ea5e9)';
+    if (severity === 'warning') return 'linear-gradient(90deg, #f59e0b, #d97706)';
+    return 'linear-gradient(90deg, #fca5a5, #ef4444)';
+});
+
+const agreementFillWidth = computed(() => `${Math.min(100, Math.max(0, agreementPercent.value))}%`);
+
+const formatKappa = computed(() => {
+    const val = agreementKappa.value;
+    if (Number.isNaN(val)) return '0.00';
+    return val.toFixed(2);
+});
 
 // --- methods ---
 const isVisibleDeselectAllCheck = ref(false);
@@ -110,7 +140,12 @@ const isProjectOwner = computed(() => {
   <CodeImport />
   <Card>
     <template #content>
+      <div v-if="isReviewMode && !hasRows" class="empty-review">
+        <i class="pi pi-list-check"></i>
+        <p>No codes to review yet. Add selections in the Search tab to see them here.</p>
+      </div>
       <DataTable
+        v-if="!isReviewMode || hasRows"
         :value="tableRows"
         dataKey="key"
         lazy
@@ -123,7 +158,8 @@ const isProjectOwner = computed(() => {
         class="compact-text"
       >
         <template #header>
-            <div class="flex align-items-center w-full" style="display: flex; gap: 0.5rem; padding-bottom: 0.75rem; align-items: center;">
+            <div class="header-row">
+              <div class="header-actions">
 
               <ToggleButton
                   v-model="isReviewMode"
@@ -227,6 +263,20 @@ const isProjectOwner = computed(() => {
                       />
                   </template>
               </template>
+
+              </div>
+
+              <div v-if="isReviewMode" class="agreement-inline">
+                <div class="kappa-row">
+                  <span class="kappa-value">κ {{ formatKappa }}</span>
+                  <span class="muted small-text">· {{ agreementItems }} items</span>
+                  <Tag :severity="agreementSeverity" :value="`${agreementPercent}%`" />
+                </div>
+                <div class="battery-shell">
+                  <div class="battery-fill" :style="{ width: agreementFillWidth, background: agreementFillColor }"></div>
+                  <div class="battery-cap"></div>
+                </div>
+              </div>
 
             </div>
         </template>
@@ -456,5 +506,90 @@ const isProjectOwner = computed(() => {
      box-shadow: 0 0 12px 3px rgba(34, 197, 94, 0.7) !important;
 }
 
+.header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.kappa-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.kappa-value {
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 1rem;
+}
+
+.muted {
+    color: #64748b;
+}
+
+.small-text {
+    font-size: 0.85rem;
+}
+
+.agreement-inline {
+    min-width: 240px;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.battery-shell {
+    position: relative;
+    height: 8px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    overflow: hidden;
+}
+
+.battery-fill {
+    height: 100%;
+    border-radius: inherit;
+    transition: width 0.25s ease;
+}
+
+.battery-cap {
+    position: absolute;
+    right: -6px;
+    top: 2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background: #cbd5e1;
+}
+
+.empty-review {
+    border: 1px dashed #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+    padding: 1rem;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+}
+
+.empty-review i {
+    color: #0ea5e9;
+    font-size: 1.2rem;
+}
 
 </style>
