@@ -45,7 +45,7 @@ const showSuppression = (event) => {
         <div class="diagnostic-card-panel-left">
           <apexchart
             v-if="isAnalysisActive && series.length > 0"
-            type="heatmap"
+            :type="chartOptions.chart?.type || 'heatmap'"
             height="350"
             :options="chartOptions"
             :series="series"

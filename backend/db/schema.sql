@@ -89,6 +89,23 @@ CREATE INDEX idx_cooccurrence_code_i ON code_cooccurrence(code_i);
 CREATE INDEX idx_cooccurrence_code_j ON code_cooccurrence(code_j);
 
 -- ============================================================
+-- 2b. CODE COUNTS (per dataset)
+-- ============================================================
+
+CREATE TABLE code_counts (
+    code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
+    dataset TEXT NOT NULL DEFAULT 'ukb',
+    person_count BIGINT NOT NULL,
+    event_count BIGINT,
+    as_of DATE NOT NULL DEFAULT CURRENT_DATE,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT code_counts_pk PRIMARY KEY (code_id, dataset),
+    CONSTRAINT code_counts_person_nonneg CHECK (person_count >= 0),
+    CONSTRAINT code_counts_event_nonneg CHECK (event_count IS NULL OR event_count >= 0)
+);
+
+-- ============================================================
 -- 3. USER PROFILES
 -- ============================================================
 

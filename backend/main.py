@@ -355,7 +355,7 @@ async def search_nodes(request: SearchRequest):
 class CooccurrenceRequest(BaseModel):
     code_ids: List[int]
     min_threshold: float = 0.0
-    max_threshold: float = 0.0
+    max_threshold: float = 1.0
     metric: str = "jaccard"
 
 
@@ -445,8 +445,57 @@ async def get_cooccurrence(request: CooccurrenceRequest):
             raise HTTPException(status_code=500, detail="Failed to fetch co-occurring codes.")
 
 
+class CodeCountsRequest(BaseModel):
+    code_ids: List[int]
+    dataset: str | None = "ukb"
+
+
+@app.post("/api/get-code-counts")
+async def get_code_counts(request: CodeCountsRequest):
+    """
+    Returns per-code counts for the requested dataset (default UKB).
+    """
+    if not request.code_ids:
+        return {"results": []}
+
+    sql = text("""
+        SELECT
+            c.id AS code_id,
+            c.code AS code_str,
+            c.description AS code_description,
+            c.system_name,
+            cc.person_count,
+            cc.event_count
+        FROM codes c
+        LEFT JOIN code_counts cc
+          ON cc.code_id = c.id AND cc.dataset = :dataset
+        WHERE c.id = ANY(:code_ids :: bigint[])
+    """)
+
+    async with AsyncSessionLocal() as session:
+        try:
+            res = await session.execute(sql, {"code_ids": request.code_ids, "dataset": request.dataset or "ukb"})
+            rows = res.fetchall()
+            results = [
+                {
+                    "code_id": int(row.code_id),
+                    "code_str": row.code_str,
+                    "code_description": row.code_description,
+                    "system_name": row.system_name,
+                    "person_count": int(row.person_count) if row.person_count is not None else 0,
+                    "event_count": int(row.event_count) if row.event_count is not None else 0,
+                }
+                for row in rows
+            ]
+            return {"results": results}
+        except Exception as e:
+            print(f"Error in /api/get-code-counts: {e}")
+            raise HTTPException(status_code=500, detail="Failed to fetch code counts.")
+
+
 class BoundsRequest(BaseModel):
     code_ids: List[int]
+    dataset: str | None = "ukb"
 
 
 @app.post("/api/get-metric-bounds")
@@ -459,7 +508,9 @@ async def get_metric_bounds(request: BoundsRequest):
         return {
             "jaccard": {"min": 0.0, "max": 1.0},
             "lift": {"min": 0.0, "max": 10.0},
-            "pair_count": {"min": 0.0, "max": 100.0}
+            "pair_count": {"min": 0.0, "max": 100.0},
+            "ukb_person_count": {"min": 0.0, "max": 0.0},
+            "ukb_event_count": {"min": 0.0, "max": 0.0}
         }
 
     # 1. SQL: Fetches bounds for BOTH metrics in one go
@@ -473,6 +524,17 @@ async def get_metric_bounds(request: BoundsRequest):
                OR code_j = ANY(:code_ids :: bigint[])
     """)
 
+    counts_sql = text("""
+        SELECT
+            MIN(person_count) AS min_p,
+            MAX(person_count) AS max_p,
+            MIN(event_count) AS min_e,
+            MAX(event_count) AS max_e
+        FROM code_counts
+        WHERE code_id = ANY(:code_ids :: bigint[])
+          AND dataset = :dataset
+    """)
+
     async with AsyncSessionLocal() as session:
         try:
             result = await session.execute(sql, {"code_ids": request.code_ids})
@@ -484,10 +546,19 @@ async def get_metric_bounds(request: BoundsRequest):
             min_c = float(row.min_c) if row.min_c is not None else 0.0
             max_c = float(row.max_c) if row.max_c is not None else 100.0
 
+            counts_result = await session.execute(counts_sql, {"code_ids": request.code_ids, "dataset": request.dataset or "ukb"})
+            counts_row = counts_result.fetchone()
+            min_p = float(counts_row.min_p) if counts_row.min_p is not None else 0.0
+            max_p = float(counts_row.max_p) if counts_row.max_p is not None else 0.0
+            min_e = float(counts_row.min_e) if counts_row.min_e is not None else 0.0
+            max_e = float(counts_row.max_e) if counts_row.max_e is not None else 0.0
+
             return {
                 "jaccard": {"min": min_j, "max": max_j},
                 "lift": {"min": min_l, "max": max_l},
-                "pair_count": {"min": min_c, "max": max_c}
+                "pair_count": {"min": min_c, "max": max_c},
+                "ukb_person_count": {"min": min_p, "max": max_p},
+                "ukb_event_count": {"min": min_e, "max": max_e}
             }
 
         except Exception as e:

@@ -61,6 +61,14 @@ cooccur_counts = cooccur_counts.merge(code_counts.rename(columns={'diag_icd10': 
 cooccur_counts = cooccur_counts.merge(code_counts.rename(columns={'diag_icd10': 'code_j', 'count': 'count_j'}), on='code_j')
 
 # -----------------------------
+# 5b️⃣ Count raw event occurrences (non-deduplicated)
+# -----------------------------
+event_counts = hes[['diag_icd10']].copy()
+event_counts = event_counts[event_counts['diag_icd10'].notna()]
+event_counts = event_counts[event_counts['diag_icd10'] != ""]
+event_counts = event_counts.groupby('diag_icd10').size().reset_index(name='event_count')
+
+# -----------------------------
 # 6️⃣ Total number of patients
 # -----------------------------
 n_patients = unq_codes['eid'].nunique()
@@ -116,6 +124,20 @@ cooccur_web = cooccur_web.reset_index(drop=True)  # reset default index
 cooccur_web.insert(0, 'id', cooccur_web.index + 1)
 
 # -----------------------------
+# 8b️⃣ Single-code counts for Analysis
+# -----------------------------
+code_counts_web = code_counts.merge(event_counts, on='diag_icd10', how='left')
+code_counts_web['code_id'] = code_counts_web['diag_icd10'].map(code_to_id)
+code_counts_web = code_counts_web.dropna(subset=['code_id'])
+code_counts_web['code_id'] = code_counts_web['code_id'].astype(int)
+code_counts_web = code_counts_web[code_counts_web['count'] >= min_web_count]
+code_counts_web = code_counts_web.rename(columns={'count': 'person_count'})
+code_counts_web['dataset'] = 'ukb'
+code_counts_web['event_count'] = code_counts_web['event_count'].fillna(0).astype(int)
+code_counts_web = code_counts_web[['code_id', 'dataset', 'person_count', 'event_count']]
+
+# -----------------------------
 # 9️⃣ Save results
 # -----------------------------
 cooccur_web.to_csv(os.path.expanduser('~/Downloads/cooccurrence_web_summary.csv'), index=False)
+code_counts_web.to_csv(os.path.expanduser('~/Downloads/code_counts_web.csv'), index=False)
