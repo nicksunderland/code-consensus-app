@@ -343,7 +343,7 @@ onMounted(fetchExamples);
                         <div class="muted" v-else>No search heuristics published.</div>
                       </div>
                       <div class="stat-card">
-                        <p class="eyebrow">Codes</p>
+                        <p class="eyebrow">Candidate Codes</p>
                         <h4>{{ metricVal(pheno, 'search_codes') }} total</h4>
                         <p class="muted">Breakdown by system</p>
                         <div class="pill-row" v-if="phenoState(pheno.id).data?.metrics?.system_breakdown?.length">

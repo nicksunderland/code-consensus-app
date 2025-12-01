@@ -520,6 +520,7 @@ async def get_example_phenotypes(project_ids: str | None = None):
         search_term_counts AS (
             SELECT phenotype_id, COUNT(*) AS total_terms
             FROM phenotype_search_terms
+            WHERE term IS NOT NULL AND btrim(term) <> ''
             GROUP BY phenotype_id
         )
         SELECT
@@ -632,10 +633,15 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
     """)
 
     system_breakdown_sql = text("""
-        SELECT system_name, COUNT(*) AS total
-        FROM phenotype_consensus_codes
-        WHERE phenotype_id = :phenotype_id
-        GROUP BY system_name
+        SELECT
+            COALESCE(cs.name, ucs.system_name, 'Unknown') AS system_name,
+            COUNT(DISTINCT COALESCE(ucs.code_id::text, ucs.orphan_id)) AS total
+        FROM user_code_selections ucs
+        LEFT JOIN codes c ON ucs.code_id = c.id
+        LEFT JOIN code_systems cs ON c.system_id = cs.id
+        WHERE ucs.phenotype_id = :phenotype_id
+          AND (ucs.found_in_search OR ucs.imported)
+        GROUP BY COALESCE(cs.name, ucs.system_name, 'Unknown')
         ORDER BY total DESC
     """)
 
@@ -682,7 +688,7 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
         term_rows = await session.execute(
             search_terms_sql, {"phenotype_id": phenotype_uuid}
         )
-        search_terms = [
+        raw_search_terms = [
             {
                 "term": row.term,
                 "is_regex": row.is_regex,
@@ -692,6 +698,12 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
                 "row_order": row.row_order,
             }
             for row in term_rows.fetchall()
+        ]
+
+        # Ignore blank rows when reporting metrics to avoid counting the default empty input
+        search_terms = [
+            term for term in raw_search_terms
+            if (term.get("term") or "").strip()
         ]
 
         system_rows = await session.execute(
@@ -709,6 +721,7 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
         counts_row = search_import_counts.fetchone()
         search_codes = int(counts_row.search_codes or 0)
         imported_codes = int(counts_row.imported_codes or 0)
+        total_codes = sum(s["count"] for s in systems)
 
         rater_row = await session.execute(
             rater_count_sql, {"phenotype_id": phenotype_uuid}
@@ -777,7 +790,7 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
                 "consensus_total": len(consensus_codes),
                 "search_terms": len(search_terms),
                 "system_breakdown": systems,
-                "search_codes": search_codes,
+                "search_codes": total_codes,
                 "imported_codes": imported_codes,
                 "agreement": agreement,
             },

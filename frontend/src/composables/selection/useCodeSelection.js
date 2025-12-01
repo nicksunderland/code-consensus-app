@@ -586,6 +586,9 @@ export function useCodeSelection() {
         const finalRows = tableRows.value.filter(r => r.consensus_selected);
 
         try {
+            const rowLookup = Object.fromEntries(
+                tableRows.value.map(r => [String(r.key), r])
+            );
             const desiredMap = new Map();
             finalRows.forEach(row => {
                 desiredMap.set(row.key, row.consensus_comment || '');
@@ -603,25 +606,30 @@ export function useCodeSelection() {
                 const isSelected = desiredMap.has(key);
                 const comment = desiredMap.get(key) ?? existingComments[key]?.comment ?? '';
                 if (isOrphan) {
+                    const sourceRow = rowLookup[key] || {};
                     orphanRows.push({
                         phenotype_id: phenotypeId,
                         user_id: userId,
                         code_type: 'orphan',
                         orphan_id: key,
-                        code_text: null,
-                        code_description: null,
-                        system_name: null,
+                        code_text: sourceRow.code || null,
+                        code_description: sourceRow.description || null,
+                        system_name: sourceRow.system || null,
                         is_consensus: isSelected,
                         consensus_comments: comment
                     });
                 } else {
                     const codeId = parseInt(key);
                     if (!Number.isNaN(codeId)) {
+                        const sourceRow = rowLookup[key] || {};
                         standardRows.push({
                             phenotype_id: phenotypeId,
                             user_id: userId,
                             code_type: 'standard',
                             code_id: codeId,
+                            code_text: sourceRow.code || null,
+                            code_description: sourceRow.description || null,
+                            system_name: sourceRow.system || null,
                             is_consensus: isSelected,
                             consensus_comments: comment
                         });
