@@ -647,6 +647,12 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
         WHERE phenotype_id = :phenotype_id
     """)
 
+    rater_count_sql = text("""
+        SELECT COUNT(DISTINCT user_id) AS raters
+        FROM user_code_selections
+        WHERE phenotype_id = :phenotype_id
+    """)
+
     async with AsyncSessionLocal() as session:
         # Validate phenotype belongs to curated projects
         ph_result = await session.execute(
@@ -704,6 +710,11 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
         search_codes = int(counts_row.search_codes or 0)
         imported_codes = int(counts_row.imported_codes or 0)
 
+        rater_row = await session.execute(
+            rater_count_sql, {"phenotype_id": phenotype_uuid}
+        )
+        rater_count = int(rater_row.scalar() or 0)
+
         agreement_sql = text("""
             SELECT
                 code_type,
@@ -748,7 +759,8 @@ async def get_example_phenotype_detail(phenotype_id: str, project_ids: str | Non
         agreement = {
             "items": items,
             "agreement": round(p_bar, 4),
-            "kappa": round(kappa, 4)
+            "kappa": round(kappa, 4),
+            "raters": rater_count
         }
 
         return {

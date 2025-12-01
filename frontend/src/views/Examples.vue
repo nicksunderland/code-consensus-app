@@ -356,17 +356,15 @@ onMounted(fetchExamples);
                         </div>
                         <div class="muted" v-else>No systems recorded yet.</div>
                       </div>
-                      <div class="stat-card">
-                        <p class="eyebrow">Consensus codes</p>
-                        <h4>{{ phenoState(pheno.id).data?.metrics?.consensus_total || 0 }}</h4>
-                        <p class="muted">Finalized by reviewers</p>
-                      </div>
                       <div class="stat-card agreement-card">
                         <p class="eyebrow">Agreement</p>
                         <div class="agreement-header">
                           <div class="kappa-line">
                             <span class="kappa-value">κ {{ agreementKappa(phenoState(pheno.id).data?.metrics) }}</span>
-                            <span class="muted">({{ phenoState(pheno.id).data?.metrics?.agreement?.items || 0 }} items)</span>
+                            <span class="muted">
+                              ({{ phenoState(pheno.id).data?.metrics?.agreement?.items || 0 }} items ·
+                              {{ phenoState(pheno.id).data?.metrics?.agreement?.raters || 'n/a' }} reviewers)
+                            </span>
                           </div>
                         </div>
                         <div class="agreement-percent">
@@ -382,6 +380,11 @@ onMounted(fetchExamples);
                           ></div>
                           <div class="battery-cap"></div>
                         </div>
+                      </div>
+                      <div class="stat-card">
+                        <p class="eyebrow">Consensus codes</p>
+                        <h4>{{ phenoState(pheno.id).data?.metrics?.consensus_total || 0 }}</h4>
+                        <p class="muted">Finalized by reviewers</p>
                       </div>
                     </div>
 
@@ -773,6 +776,11 @@ onMounted(fetchExamples);
   text-align: left;
   vertical-align: middle;
   font-size: 0.9rem;
+}
+
+.codes-table th:nth-child(4),
+.codes-table td:nth-child(4) {
+  min-width: 160px;
 }
 
 .codes-table th {

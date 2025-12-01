@@ -230,7 +230,8 @@ export function useDownload() {
                     status: !!finalizedDate ? "Finalized" : "Draft",
                     agreement_percent: Math.round(pBar * 100),
                     kappa: Number.isFinite(kappa) ? kappa.toFixed(3) : '0.000',
-                    agreement_items: items
+                    agreement_items: items,
+                    agreement_raters: selectionRows.length ? new Set(selectionRows.map(r => r.user_id)).size : 0
                 },
                 code_systems: uniqueSystems,
                 stats: {
