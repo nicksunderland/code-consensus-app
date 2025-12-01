@@ -7,13 +7,13 @@
       <div class="footer-content">
         <div class="footer-left">
           <h3>Code Consensus</h3>
-          <p class="copyright">© 2024 Research Group. All rights reserved.</p>
+          <p class="copyright">© 2025 HERMES Consortium. All rights reserved.</p>
         </div>
 
         <div class="footer-links">
           <div class="link-column">
             <h4>Legal</h4>
-            <a href="#">Terms of Service</a>
+            <router-link to="/terms">Terms of Service</router-link>
           </div>
           <div class="link-column social">
             <h4>Connect</h4>
@@ -76,6 +76,10 @@
   text-decoration: none;
   font-size: 0.95rem;
   transition: color 0.2s;
+}
+
+.link-column a:hover, .link-column :deep(a.router-link-active) {
+  color: #fff;
 }
 
 .link-column a:hover {

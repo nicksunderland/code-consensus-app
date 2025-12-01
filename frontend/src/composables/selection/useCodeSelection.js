@@ -484,6 +484,60 @@ export function useCodeSelection() {
         };
     };
 
+    const agreementStats = computed(() => {
+        const userId = user.value?.id;
+        const codeMap = new Map();
+
+        // Seed with team selections from the database
+        Object.entries(teamSelections.value || {}).forEach(([codeId, userMap]) => {
+            const entry = codeMap.get(codeId) || {};
+            Object.entries(userMap || {}).forEach(([uid, details]) => {
+                entry[uid] = !!details.selected;
+            });
+            codeMap.set(codeId, entry);
+        });
+
+        // Overlay current user's live selections so the bar updates immediately
+        if (userId) {
+            tableRows.value.forEach(row => {
+                const entry = codeMap.get(row.key) || {};
+                entry[userId] = !!row.selected;
+                codeMap.set(row.key, entry);
+            });
+        }
+
+        let totalRatings = 0;
+        let totalSelected = 0;
+        let pSum = 0;
+        let items = 0;
+
+        codeMap.forEach((userMap) => {
+            const votes = Object.values(userMap);
+            const n = votes.length;
+            if (n < 2) return; // need at least two raters
+            const nSel = votes.filter(Boolean).length;
+            const nNot = n - nSel;
+            const p_i = ((nSel * (nSel - 1)) + (nNot * (nNot - 1))) / (n * (n - 1));
+            pSum += p_i;
+            items += 1;
+            totalRatings += n;
+            totalSelected += nSel;
+        });
+
+        const pBar = items ? pSum / items : 0;
+        const pYes = totalRatings ? totalSelected / totalRatings : 0;
+        const pNo = 1 - pYes;
+        const pE = (pYes * pYes) + (pNo * pNo);
+        const denom = 1 - pE;
+        const kappa = denom ? (pBar - pE) / denom : 0;
+
+        return {
+            items,
+            agreement: pBar,
+            kappa
+        };
+    });
+
     const fetchConsensus = async () => {
         const phenotypeId = currentPhenotype.value?.id;
         if (!phenotypeId) return;
@@ -733,6 +787,7 @@ export function useCodeSelection() {
         selectionState,
         hasUnsavedChanges,
         hasUnsavedConsensusChanges,
+        agreementStats,
 
         // data
         tableRows,

@@ -11,3 +11,5 @@ venv/
 # compiled python code
 __pycache__/
 
+# data outputs
+cooccurrence_web_summary.csv

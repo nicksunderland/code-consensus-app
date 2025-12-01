@@ -6,6 +6,7 @@ import AccordionView from '../views/AccordionView.vue';
 import DocumentationView from "@/views/DocumentationView.vue";
 import PhenoFlowView from "@/views/PhenoFlowView.vue";
 import ExamplesView from "@/views/Examples.vue";
+import TermsView from "@/views/Terms.vue";
 import { useHead } from '@unhead/vue';
 
 const router = createRouter({
@@ -40,6 +41,12 @@ const router = createRouter({
       name: 'examples',
       component: ExamplesView,
       meta: { title: 'Examples' }
+    },
+    {
+      path: '/terms',
+      name: 'terms',
+      component: TermsView,
+      meta: { title: 'Terms of Service' }
     }
   ]
 });

@@ -15,11 +15,13 @@ const sliderRange = ref([0, 1]) // The actual handle positions
 const sliderBounds = reactive({ min: 0, max: 1, step: 0.01 })
 const boundsCache = ref({
     jaccard: { min: 0, max: 1 },
-    lift: { min: 0, max: 10 }
+    lift: { min: 0, max: 10 },
+    pair_count: { min: 0, max: 100 }
 })
 const metricOptions = [
   { label: 'Jaccard', value: 'jaccard' },
-  { label: 'Lift', value: 'lift' }
+  { label: 'Lift', value: 'lift' },
+  { label: 'Counts', value: 'pair_count' }
 ]
 
 // data
@@ -125,6 +127,8 @@ function metricTooltip(metric) {
             return "Jaccard index: measures the proportion of shared individuals between two codes. Range: 0 (no overlap) to 1 (all individuals shared)."
         case "lift":
             return "Lift: measures how much more often two codes occur together than expected by chance. Values >1 indicate positive association."
+        case "pair_count":
+            return "Counts: number of individuals with both codes. Small counts may be suppressed; see suppression guidance."
         default:
             return "Select a metric to see explanation."
     }
@@ -148,7 +152,7 @@ export function useAnalysis() {
         // 1. Set Track Limits
         sliderBounds.min = bounds.min
         sliderBounds.max = bounds.max
-        sliderBounds.step = metric === 'jaccard' ? 0.01 : 0.1
+        sliderBounds.step = metric === 'pair_count' ? 1 : (metric === 'jaccard' ? 0.01 : 0.1)
 
         // 2. Smart Lower Handle Calculation (Min + 50%)
         const totalRange = bounds.max - bounds.min
@@ -163,8 +167,8 @@ export function useAnalysis() {
 
     const fetchBounds = async () => {
         const ids = tableRows.value
-            .filter(r => r.selected)
-            .map(r => r.key)
+            .filter(r => r.selected && !Number.isNaN(Number(r.key)))
+            .map(r => Number(r.key))
 
         if (!ids.length) return
 
@@ -185,11 +189,11 @@ export function useAnalysis() {
 
     async function runAnalysis() {
         const ids = tableRows.value
-            .filter(r => r.selected)
-            .map(r => r.key)
+            .filter(r => r.selected && !Number.isNaN(Number(r.key)))
+            .map(r => Number(r.key))
 
         if (!ids.length) {
-            emitError("No codes selected"); return
+            emitError("No numeric codes selected"); return
         }
 
         try {
@@ -207,7 +211,8 @@ export function useAnalysis() {
 
         } catch (err) {
             console.error(err)
-            emitError("Analysis Failed")
+            const detail = err?.response?.data?.detail || err.message || 'Analysis failed.'
+            emitError("Analysis Failed", detail)
         }
     }
 
