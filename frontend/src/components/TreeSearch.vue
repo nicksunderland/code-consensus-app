@@ -165,9 +165,33 @@ onMounted(async () => {
     :lazy="true"
     >
       <template #default="{ node }">
-        <span :class="{ 'search-hit': node.data.found_in_search }">
-          {{ node.label }}
-        </span>
+        <div
+          class="tree-row"
+          :class="{
+            'search-hit': node.data.found_in_search,
+            'non-selectable': node.selectable === false
+          }"
+        >
+          <div class="pill-stack">
+            <span class="code-pill">{{ node.data.code }}</span>
+          </div>
+          <div class="node-body">
+            <div class="node-line">
+              <span
+                class="node-title"
+                :class="{
+                  'node-root': node.parent === null,
+                  'node-leaf': node.data.is_leaf
+                }"
+              >
+                {{ node.data.description }}
+              </span>
+              <span v-if="node.selectable === false" class="badge muted">Group</span>
+              <span v-else-if="node.data.is_leaf" class="badge leaf">Leaf</span>
+              <span v-else class="badge branch">Chapter</span>
+            </div>
+          </div>
+        </div>
       </template>
     </Tree>
   </div>
@@ -205,6 +229,103 @@ onMounted(async () => {
     .search-use-regex,
     .p-button {
       flex: 0 0 auto;
+    }
+
+    .tree-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.18rem 0.3rem;
+      border-radius: 8px;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    .tree-row:hover {
+      background: #f8fafc;
+      transform: translateX(1px);
+    }
+
+    .node-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .node-line {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+
+    .node-title {
+      font-weight: 400;
+      color: #0f172a;
+    }
+
+    .node-root {
+      font-weight: 700;
+    }
+
+    .node-leaf {
+      font-weight: 400;
+      font-size: 0.95rem;
+    }
+
+    .pill-stack {
+      display: inline-flex;
+      gap: 0.2rem;
+      align-items: center;
+    }
+
+    .code-pill {
+      display: inline-block;
+      background: #0ea5e910;
+      color: #0f172a;
+      border: 1px solid #bae6fd;
+      padding: 0.12rem 0.35rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.82rem;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+
+    .badge.leaf {
+      background: #dcfce7;
+      color: #15803d;
+      border-color: #bbf7d0;
+    }
+
+    .badge.branch {
+      background: #e0f2fe;
+      color: #0369a1;
+      border-color: #bae6fd;
+    }
+
+    .badge.muted {
+      background: #f1f5f9;
+      color: #94a3b8;
+      border-color: #e2e8f0;
+    }
+
+    .search-hit {
+      box-shadow: inset 0 0 0 1px #0ea5e9;
+      background: #e0f2fe;
+    }
+
+    .non-selectable {
+      opacity: 0.8;
+    }
+
+    :deep(.p-tree .p-treenode-content) {
+      padding: 0.1rem 0.2rem;
     }
 
 
