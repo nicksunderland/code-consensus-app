@@ -1,6 +1,6 @@
 ## Code Consensus
 
-[![CI](https://img.shields.io/badge/tests-vitest-green)](./frontend/package.json) [![API](https://img.shields.io/badge/backend-fastapi-blue)](./backend/main.py) [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#)  
+[![CI](https://img.shields.io/badge/tests-vitest-green)](./frontend/package.json) [![API](https://img.shields.io/badge/backend-fastapi-blue)](./backend/main.py) ![License](https://img.shields.io/badge/license-%C2%A9%20HERMES-lightgrey)  
 Author: Nicholas Sunderland (nicholas.sunderland@bristol.ac.uk)
 
 Collaborative phenotype coding toolkit: Vue + PrimeVue frontend (Netlify) and FastAPI backend (Fly.io) with Supabase auth/DB.
