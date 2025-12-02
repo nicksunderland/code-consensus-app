@@ -477,7 +477,7 @@ watch(
               </div>
               <div class="legend-item">
                 <span class="legend-dot legend-blue"></span>
-                <span>Outflow</span>
+                <span>Inflow</span>
               </div>
               <div class="legend-item">
                 <span class="legend-dot legend-orange"></span>
