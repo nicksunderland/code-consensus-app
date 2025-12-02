@@ -241,6 +241,68 @@ CREATE TRIGGER update_phenotypes_updated_at
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ============================================================
+-- 5b. PHENOFLOWS (project-scoped graph storage)
+-- ============================================================
+CREATE TABLE phenoflows (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    graph_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    viewport JSONB,
+    created_by UUID REFERENCES user_profiles(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE phenoflows ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Project members can view phenoflows"
+ON phenoflows FOR SELECT
+USING (
+    project_id IN (
+        SELECT id FROM projects
+        WHERE owner = auth.uid() OR auth.uid() = ANY(member_ids)
+    )
+);
+
+CREATE POLICY "Project members can insert phenoflows"
+ON phenoflows FOR INSERT
+WITH CHECK (
+    project_id IN (
+        SELECT id FROM projects
+        WHERE owner = auth.uid() OR auth.uid() = ANY(member_ids)
+    )
+);
+
+CREATE POLICY "Project members can update phenoflows"
+ON phenoflows FOR UPDATE
+USING (
+    project_id IN (
+        SELECT id FROM projects
+        WHERE owner = auth.uid() OR auth.uid() = ANY(member_ids)
+    )
+)
+WITH CHECK (
+    project_id IN (
+        SELECT id FROM projects
+        WHERE owner = auth.uid() OR auth.uid() = ANY(member_ids)
+    )
+);
+
+CREATE POLICY "Project members can delete phenoflows"
+ON phenoflows FOR DELETE
+USING (
+    project_id IN (
+        SELECT id FROM projects
+        WHERE owner = auth.uid() OR auth.uid() = ANY(member_ids)
+    )
+);
+
+CREATE INDEX idx_phenoflows_project ON phenoflows(project_id);
+CREATE INDEX idx_phenoflows_updated ON phenoflows(updated_at DESC);
+
+-- ============================================================
 -- 6. PHENOTYPE SEARCH TERMS
 -- ============================================================
 
