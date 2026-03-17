@@ -73,7 +73,7 @@ export function useTreeSearch() {
     })
     const getDefaultSystemIds = () => {
         if (codeSystems.value.length === 0) return []
-        const defaults = ['ICD-10-UKBB', 'ICD-9-UKBB']
+        const defaults = ['ICD-10-UKBB', 'ICD-9-UKBB', 'SNOMED-CT']
         return codeSystems.value
             .filter(sys => defaults.includes(sys.name))
             .map(sys => sys.id)
@@ -395,7 +395,7 @@ export function useTreeSearch() {
                     columns: s.columns,
                     system_ids: s.system_ids,
                 })),
-            limit: 100,
+            limit: 200,
         }
 
         if (payload.searches.length === 0) {

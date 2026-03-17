@@ -13,3 +13,9 @@ __pycache__/
 
 # data outputs
 cooccurrence_web_summary.csv
+
+# data inputs
+backend/db/data
+
+# other
+.DS_Store

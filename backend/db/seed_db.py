@@ -5,8 +5,11 @@ from typing import List, Dict, Any, Optional
 import xml.etree.ElementTree as ET
 import sys
 import openpyxl
+from collections import defaultdict
 
 sys.setrecursionlimit(5000)
+# SNOMED descriptions can contain very long OWL expressions
+csv.field_size_limit(10_000_000)
 
 
 # ==========================================================
@@ -724,6 +727,159 @@ def parse_cpt_excel(file_path):
 
 
 # ==========================================================
+# SNOMED CT RF2 PARSER
+# ==========================================================
+
+# SNOMED CT constants
+_SNOMED_ROOT_ID    = "138875005"
+_IS_A_TYPE         = "116680003"
+_FSN_TYPE          = "900000000000003001"
+_SYNONYM_TYPE      = "900000000000013009"
+_PREFERRED         = "900000000000548007"
+_US_REFSET         = "900000000000509007"
+_GB_REFSET         = "900000000000508004"
+
+
+def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
+    """
+    Parses SNOMED CT International RF2 Snapshot files and returns
+    (rows, next_gid) in the same format as UnifiedGraph.finalize_and_export.
+
+    snapshot_dir: path to the Snapshot/ folder inside the RF2 release.
+    """
+    term_dir = os.path.join(snapshot_dir, "Terminology")
+    lang_dir = os.path.join(snapshot_dir, "Refset", "Language")
+
+    # Locate files (filename contains the release date)
+    def find_file(directory, prefix):
+        for name in os.listdir(directory):
+            if name.startswith(prefix) and name.endswith(".txt"):
+                return os.path.join(directory, name)
+        raise FileNotFoundError(f"No file matching '{prefix}*.txt' in {directory}")
+
+    concepts_file     = find_file(term_dir, "sct2_Concept_Snapshot")
+    descriptions_file = find_file(term_dir, "sct2_Description_Snapshot")
+    relationships_file= find_file(term_dir, "sct2_Relationship_Snapshot")
+    language_file     = find_file(lang_dir, "der2_cRefset_LanguageSnapshot")
+
+    # --- 1. Active concepts ---
+    print(f"   🔬 SNOMED: loading concepts ...")
+    active: set = set()
+    with open(concepts_file, encoding="utf-8") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            if row["active"] == "1":
+                active.add(row["id"])
+    print(f"      -> {len(active):,} active concepts")
+
+    # --- 2. Preferred terms ---
+    print(f"   🔬 SNOMED: loading descriptions ...")
+    desc_map: dict = {}
+    concept_descs: dict = defaultdict(list)
+    with open(descriptions_file, encoding="utf-8") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            if row["active"] != "1" or row["conceptId"] not in active:
+                continue
+            did = row["id"]
+            desc_map[did] = {"conceptId": row["conceptId"], "typeId": row["typeId"], "term": row["term"]}
+            concept_descs[row["conceptId"]].append(did)
+
+    preferred_desc_ids: set = set()
+    with open(language_file, encoding="utf-8") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            if row["active"] == "1" and row["refsetId"] in {_US_REFSET, _GB_REFSET} and row["acceptabilityId"] == _PREFERRED:
+                preferred_desc_ids.add(row["referencedComponentId"])
+
+    preferred_terms: dict = {}
+    for cid, desc_ids in concept_descs.items():
+        pref_syn = pref_fsn = any_syn = any_desc = None
+        for did in desc_ids:
+            d = desc_map[did]
+            is_pref = did in preferred_desc_ids
+            term = d["term"]
+            any_desc = any_desc or term
+            if d["typeId"] == _SYNONYM_TYPE:
+                any_syn = any_syn or term
+                if is_pref: pref_syn = pref_syn or term
+            elif d["typeId"] == _FSN_TYPE:
+                clean = term.rsplit("(", 1)[0].strip() if "(" in term else term
+                if is_pref: pref_fsn = pref_fsn or clean
+        preferred_terms[cid] = pref_syn or pref_fsn or any_syn or any_desc or cid
+
+    # --- 3. IS-A relationships → single primary parent ---
+    print(f"   🔬 SNOMED: loading relationships ...")
+    parents_multi: dict = defaultdict(set)
+    with open(relationships_file, encoding="utf-8") as f:
+        for row in csv.DictReader(f, delimiter="\t"):
+            if row["active"] != "1" or row["typeId"] != _IS_A_TYPE:
+                continue
+            src, dst = row["sourceId"], row["destinationId"]
+            if src in active and dst in active:
+                parents_multi[src].add(dst)
+    primary_parent = {child: min(ps, key=lambda x: int(x)) for child, ps in parents_multi.items()}
+    print(f"      -> {len(primary_parent):,} concepts have a parent")
+
+    # --- 4. Assign IDs ---
+    print(f"   🔬 SNOMED: building tree (start_gid={start_gid:,}) ...")
+    non_root = sorted([c for c in active if c != _SNOMED_ROOT_ID], key=lambda x: preferred_terms.get(x, x).lower())
+    concept_to_db_id: dict = {_SNOMED_ROOT_ID: start_gid}
+    for i, cid in enumerate(non_root, start=start_gid + 1):
+        concept_to_db_id[cid] = i
+    next_gid = start_gid + len(active)
+
+    has_children: set = set(primary_parent.values())
+
+    # --- 5. Materialized paths (iterative, cycle-safe) ---
+    path_cache: dict = {_SNOMED_ROOT_ID: f"/{start_gid}/"}
+
+    def get_path(cid: str) -> str:
+        if cid in path_cache:
+            return path_cache[cid]
+        chain, visited, current = [], set(), cid
+        while current not in path_cache:
+            if current in visited:
+                path_cache[current] = f"/{start_gid}/{concept_to_db_id[current]}/"
+                break
+            visited.add(current)
+            chain.append(current)
+            parent = primary_parent.get(current)
+            if parent is None:
+                path_cache[current] = f"/{start_gid}/{concept_to_db_id[current]}/"
+                chain.pop()
+                break
+            current = parent
+        base = path_cache.get(current, f"/{start_gid}/")
+        for node in reversed(chain):
+            base = f"{base}{concept_to_db_id[node]}/"
+            path_cache[node] = base
+        return path_cache[cid]
+
+    # --- 6. Build rows ---
+    rows = [{
+        "id": start_gid, "system_id": system_id,
+        "code": "SNOMED-CT",
+        "description": "SNOMED Clinical Terms International Edition",
+        "parent_id": None, "materialized_path": f"/{start_gid}/",
+        "is_leaf": False, "is_selectable": False,
+    }]
+    for cid in non_root:
+        db_id = concept_to_db_id[cid]
+        parent_cid = primary_parent.get(cid)
+        parent_db_id = concept_to_db_id.get(parent_cid, start_gid) if parent_cid else start_gid
+        rows.append({
+            "id": db_id, "system_id": system_id,
+            "code": cid,
+            "description": preferred_terms.get(cid, cid),
+            "parent_id": parent_db_id,
+            "materialized_path": get_path(cid),
+            "is_leaf": cid not in has_children,
+            "is_selectable": True,
+        })
+
+    print(f"      -> {len(rows):,} SNOMED CT rows ready")
+    return rows, next_gid
+
+
+# ==========================================================
 # 3. DEBUG
 # ==========================================================
 def print_debug_tree(rows, start_code, depth=3, system_filter=None):
@@ -759,17 +915,23 @@ def print_debug_tree(rows, start_code, depth=3, system_filter=None):
 # 4. RUNNER
 # ==========================================================
 def run_export():
-    base_dir = os.path.expanduser("~/Downloads")
+    db_dir = os.path.dirname(__file__)
+    base_dir = os.path.join(db_dir, "data")
     files = {
         "who": f"{base_dir}/icd102019en.xml",
-        "cm": f"{base_dir}/icd10cm-table and index-2026/icd10cm-tabular-2026.xml",
+        "cm": f"{base_dir}/icd10cm-tabular-2026.xml",
         "ukbb10": f"{base_dir}/coding19.tsv",
-        "icd9": f"{base_dir}/ICD-9-CM-v32-master-descriptions/CMS32_DESC_LONG_DX.txt",
+        "icd9": f"{base_dir}/CMS32_DESC_LONG_DX.txt",
         "ukbb9": f"{base_dir}/coding87.tsv",
         "opcs3": f"{base_dir}/coding259.tsv",
         "opcs4": f"{base_dir}/coding240.tsv",
-        "icd9proc": f"{base_dir}/ICD-9-CM-v32-master-descriptions/CMS32_DESC_LONG_SG.txt",
-        "cpt": f"{base_dir}/cpt-pcm-nhsn.xlsx"
+        "icd9proc": f"{base_dir}/CMS32_DESC_LONG_SG.txt",
+        "cpt": f"{base_dir}/cpt-pcm-nhsn.xlsx",
+        # SNOMED CT RF2 – auto-discovered under db/data/SnomedCT_*/
+        "snomed_snapshot": os.path.join(base_dir, next(
+            (d for d in os.listdir(base_dir) if d.startswith("SnomedCT_") and os.path.isdir(os.path.join(base_dir, d))),
+            "SnomedCT_InternationalRF2"
+        ), "Snapshot") if os.path.isdir(base_dir) else "",
     }
 
     next_sys = 1;
@@ -845,15 +1007,28 @@ def run_export():
     r_cpt, next_gid = g_cpt.finalize_and_export(next_gid);
     codes.extend(r_cpt)
 
+    # --- 7. SNOMED CT ---
+    if os.path.isdir(files["snomed_snapshot"]):
+        s10 = {"id": next_sys, "name": "SNOMED-CT", "description": "SNOMED Clinical Terms International Edition", "version": "International 20260301", "url": "https://www.snomed.org/snomed-ct/get-snomed"}
+        systems.append(s10)
+        r_snomed, next_gid = parse_snomed_rf2(files["snomed_snapshot"], next_sys, next_gid)
+        next_sys += 1
+        codes.extend(r_snomed)
+    else:
+        print(f"\n⚠️  SNOMED snapshot not found at {files['snomed_snapshot']} – skipping.")
+
     print("\n💾 Saving...")
     codes.sort(key=lambda x: x['id'])
+    system_name_lookup = {s['id']: s['name'] for s in systems}
+    for row in codes:
+        row['system_name'] = system_name_lookup.get(row['system_id'], '')
     with open(f"{base_dir}/code_systems.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["id", "name", "description", "version", "url"]);
         w.writeheader();
         w.writerows(systems)
     with open(f"{base_dir}/codes.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["id", "system_id", "code", "description", "parent_id", "materialized_path",
-                                          "is_leaf", "is_selectable"]);
+        w = csv.DictWriter(f, fieldnames=["id", "system_id", "system_name", "code", "description", "parent_id",
+                                          "materialized_path", "is_leaf", "is_selectable"]);
         w.writeheader();
         w.writerows(codes)
 

@@ -148,7 +148,7 @@ async def get_tree_nodes(parent_id: str | None = None):
                 query_text = f"""
                     {query_base}
                     WHERE e.parent_id IS NULL
-                    ORDER BY e.code;
+                    ORDER BY e.id;
                 """
             else:
                 # Use Case 2 & 3: Get children of any node
@@ -158,7 +158,7 @@ async def get_tree_nodes(parent_id: str | None = None):
                 query_text = f"""
                     {query_base}
                     WHERE e.parent_id = :parent_id
-                    ORDER BY e.code;
+                    ORDER BY e.id;
                 """
                 params = {"parent_id": int(parent_id)}
 

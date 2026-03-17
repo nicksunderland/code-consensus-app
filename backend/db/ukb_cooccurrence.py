@@ -98,7 +98,7 @@ cooccur_web = cooccur_counts[cooccur_counts['cooc_count'] >= min_web_count].copy
 # -----------------------------
 # Replace codes with ids
 # -----------------------------
-codes_df = pd.read_csv(os.path.expanduser("~/Downloads/codes.csv"))
+codes_df = pd.read_csv(Path(__file__).resolve().parent / "data" / "codes.csv")
 code_to_id = codes_df.set_index('code')['id'].to_dict()
 cooccur_web['code_i'] = cooccur_web['code_i'].map(code_to_id)
 cooccur_web['code_j'] = cooccur_web['code_j'].map(code_to_id)
@@ -139,5 +139,5 @@ code_counts_web = code_counts_web[['code_id', 'dataset', 'person_count', 'event_
 # -----------------------------
 # 9️⃣ Save results
 # -----------------------------
-cooccur_web.to_csv(os.path.expanduser('~/Downloads/cooccurrence_web_summary.csv'), index=False)
-code_counts_web.to_csv(os.path.expanduser('~/Downloads/code_counts_web.csv'), index=False)
+cooccur_web.to_csv(Path(__file__).resolve().parent / "data" / "cooccurrence_web_summary.csv", index=False)
+code_counts_web.to_csv(Path(__file__).resolve().parent / "data" / "code_counts_web.csv", index=False)
