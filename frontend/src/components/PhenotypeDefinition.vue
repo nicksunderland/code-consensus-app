@@ -21,6 +21,7 @@ const {
     savePhenotype,
     loadPhenotype,
     deletePhenotype,
+    canDeletePhenotype,
     nameError,
     isEditingExisting,
     phenotypeExists,
@@ -225,15 +226,23 @@ const deleteCheck = (event) => {
                 style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
               />
               <ConfirmPopup></ConfirmPopup>
-              <Button
-                @click="deleteCheck"
-                fluid
-                icon="pi pi-trash"
-                label="Delete"
-                severity="secondary"
-                :disabled="!currentPhenotype?.name"
-                style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
-              />
+              <!-- wrapper so the tooltip still shows while the button is disabled -->
+              <span
+                class="delete-wrapper"
+                v-tooltip.top="currentPhenotype?.id && !canDeletePhenotype
+                  ? 'Only the phenotype\'s creator or the project owner can delete it'
+                  : null"
+              >
+                <Button
+                  @click="deleteCheck"
+                  fluid
+                  icon="pi pi-trash"
+                  label="Delete"
+                  severity="secondary"
+                  :disabled="!canDeletePhenotype"
+                  style="font-size: 0.9rem; padding: 0.4rem 0.6rem; "
+                />
+              </span>
           </div>
 
 
@@ -259,6 +268,10 @@ const deleteCheck = (event) => {
     flex-direction: column; /* stack label and slider */
     gap: 0.8rem;
 
+  }
+
+  .delete-wrapper {
+    display: block;
   }
 
   /* 1. THE BOX (Background & Border when checked) */

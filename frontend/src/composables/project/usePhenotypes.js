@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { supabase } from '@/composables/shared/useSupabase.js'
 import { useProjects } from "@/composables/project/useProjects.js";
 import { useAuth } from "@/composables/auth/useAuth.js";
@@ -20,6 +20,15 @@ export function usePhenotypes() {
     const loading = ref(false);
     const nameError = ref(false);
     const isEditingExisting = ref(false);
+
+    // mirrors the phenotypes delete policy: creator or project owner. A blocked delete
+    // doesn't error under RLS, it just removes nothing, so disable the button instead
+    const canDeletePhenotype = computed(() => {
+        const uid = auth.user.value?.id
+        const ph = currentPhenotype.value
+        if (!uid || !ph?.id) return false
+        return ph.user_id === uid || projects.currentProject.value?.owner === uid
+    })
 
     function flashNameError() {nameError.value = true
         setTimeout(() => nameError.value = false, 1200)
@@ -209,6 +218,7 @@ export function usePhenotypes() {
         loading,
         nameError,
         isEditingExisting,
+        canDeletePhenotype,
 
         // functions
         phenotypeExists,
