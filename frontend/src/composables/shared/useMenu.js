@@ -15,7 +15,7 @@ export function useMenu() {
         const user = auth.user.value;
         const currentProject = projects.currentProject.value;
 
-        // 1. Projects Dropdown
+        // projects
         const projectItems = !user
         ? [{ label: 'Please login', icon: 'pi pi-exclamation-triangle' }]
         : projects.projects.value.length === 0
@@ -36,7 +36,7 @@ export function useMenu() {
               }))
             ]
 
-        // 2. Phenotypes Dropdown
+        // phenotypes
         const phenotypeItems = !user
             ? [{ label: 'Please login', icon: 'pi pi-exclamation-triangle' }]
             : phenotypes.phenotypes.value.length === 0
@@ -50,7 +50,7 @@ export function useMenu() {
                 }
             }))
 
-        // 3. Account Dropdown
+        // account
         const accountItems = !user
         ? {
             label: 'Login',
@@ -75,18 +75,17 @@ export function useMenu() {
             ]
         }
 
-        // --- CONSTRUCT MENU ---
 
         const baseNav = [
             { label: 'Home', icon: 'pi pi-home', route: '/' },
             { label: 'Consensus Tool', icon: 'pi pi-server', route: '/accordion' }
         ];
 
-        // Items visible ONLY in Consensus Mode
+        // consensus-mode only
         const toolItems = [
             { label: currentProject ? `Projects (${currentProject.name})` : 'Projects', icon: 'pi pi-briefcase', items: projectItems },
             { label: 'Phenotypes', icon: 'pi pi-save', items: phenotypeItems },
-            // NEW BUTTON: Pheno Flow (Only appears in consensus mode)
+            // PhenoFlow
             { label: 'Pheno Flow', icon: 'pi pi-sitemap', route: '/flow' }
         ];
 
@@ -95,8 +94,7 @@ export function useMenu() {
             accountItems
         ];
 
-        // DEFINE CONSENSUS CONTEXT:
-        // The menu should show tool items if we are on /accordion OR /flow
+        // tool items show on /accordion and /flow
         const consensusRoutes = ['/accordion', '/flow'];
         const isConsensusMode = consensusRoutes.includes(route.path);
 

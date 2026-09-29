@@ -7,7 +7,6 @@ import Tag from 'primevue/tag';
 import Footer from "@/components/Footer.vue";
 import 'primeicons/primeicons.css';
 
-// Smooth scroll handler
 const scrollToSection = (id) => {
   const element = document.getElementById(id);
   if (element) {
@@ -137,7 +136,7 @@ const steps = ref([
 
     <div class="doc-container">
 
-        <!-- LEFT: STICKY NAVIGATION -->
+        <!-- sticky nav -->
         <aside class="sidebar">
             <nav class="sticky-nav">
                 <h3>Contents</h3>
@@ -157,7 +156,6 @@ const steps = ref([
                 <h4>Need Help?</h4>
                 <p class="text-sm text-600 mb-3">Contact the team for access issues or to report bugs.</p>
 
-                <!-- INLINE BUTTONS CONTAINER -->
                 <div class="flex gap-2 justify-content-center w-full">
 
                     <a href="https://github.com/nicksunderland/code-consensus-app/issues" target="_blank" class="no-underline">
@@ -169,7 +167,7 @@ const steps = ref([
             </nav>
         </aside>
 
-        <!-- RIGHT: MAIN CONTENT -->
+        <!-- content -->
         <main class="main-content">
 
             <section class="intro mb-6">
@@ -188,15 +186,13 @@ const steps = ref([
             <div class="timeline-wrapper">
                 <div v-for="(step, index) in steps" :key="step.id" :id="step.id" class="doc-step">
 
-                    <!-- Visual Connector Line -->
                     <div class="step-connector" v-if="index !== steps.length - 1"></div>
 
-                    <!-- Step Number Bubble -->
+                    <!-- step number -->
                     <div class="step-marker">
                         {{ index + 1 }}
                     </div>
 
-                    <!-- The Content Card -->
                     <Card class="step-card shadow-1">
                         <template #title>
                             <div class="step-card-header">
@@ -236,7 +232,7 @@ const steps = ref([
 </template>
 
 <style scoped>
-/* LAYOUT UTILS */
+/* layout */
 .page-wrapper {
   background-color: #f8f9fa;
   min-height: 100vh;
@@ -278,7 +274,7 @@ const steps = ref([
     flex: 1;
 }
 
-/* SIDEBAR STYLES */
+/* sidebar */
 .sidebar {
     position: relative;
 }
@@ -333,7 +329,7 @@ const steps = ref([
     padding-top: 1rem;
 }
 
-/* 2. Center the button row */
+/* centre the button row */
 .help-box div {
     display: flex;
     gap: 0.5rem;
@@ -342,13 +338,13 @@ const steps = ref([
     margin-top: 0.5rem;
 }
 
-/* 3. Reset link styles */
+/* reset link styles */
 .help-box a {
     text-decoration: none;
     display: flex;              /* Fixes vertical alignment of button inside anchor */
 }
 
-/* MAIN CONTENT STYLES */
+/* content */
 .intro-card {
     border: none;
     background: linear-gradient(to right, #ffffff, #f8fafc);
@@ -356,7 +352,7 @@ const steps = ref([
     margin-bottom: 3rem;
 }
 
-/* CUSTOM TIMELINE STYLES */
+/* timeline */
 .timeline-wrapper {
     position: relative;
     padding-left: 20px;
@@ -412,20 +408,17 @@ const steps = ref([
     margin-bottom: 1.5rem;
 }
 
-/* Container: Forces children to sit side-by-side */
 .step-card-header {
     display: flex;        /* This creates the row */
     align-items: center;  /* Centers them vertically */
 }
 
-/* Icon: Adds space to its right */
 .step-icon {
     font-size: 1.5rem;
     color: var(--primary-color);
     margin-right: 1rem;   /* GAP HERE */
 }
 
-/* Title: Adds space to its right */
 .step-title-text {
     font-weight: 600;
     font-size: 1.2rem;
@@ -433,8 +426,7 @@ const steps = ref([
     white-space: nowrap;  /* Prevents title from wrapping weirdly */
 }
 
-/* Tag: Pushes itself to the far right (optional) */
-/* If you want the tag right next to the title, change 'auto' to '0' */
+/* push the tag to the far right */
 .step-tag {
     font-weight: normal;
     margin-left: auto;
@@ -468,7 +460,6 @@ const steps = ref([
 .conclusion-area {
     margin-top: 5rem;
 
-    /* Flexbox Centering Magic */
     display: flex;
     flex-direction: column; /* Stack text on top of button */
     align-items: center;    /* Center horizontally */
@@ -476,7 +467,7 @@ const steps = ref([
     gap: 1.5rem;            /* specific space between Text and Button */
 }
 
-/* MOBILE RESPONSIVE */
+/* mobile */
 @media (max-width: 960px) {
     .doc-container {
         grid-template-columns: 1fr; /* Stack sidebar on top */

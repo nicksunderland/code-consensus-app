@@ -1,6 +1,4 @@
 """
-seed_esc_selections.py
-======================
 Runs each ESC phenotype's saved search terms against the codes table
 and saves all matches as user_code_selections (found_in_search=True).
 
@@ -22,7 +20,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env")
 
 DB_URL = os.getenv("VITE_DATABASE_URL")
 if not DB_URL:
-    print("❌ VITE_DATABASE_URL not set in .env")
+    print("VITE_DATABASE_URL not set in .env")
     sys.exit(1)
 
 SEARCH_LIMIT = 500  # max codes to save per phenotype
@@ -89,24 +87,22 @@ def run():
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # Get ESC project
         cur.execute("SELECT id, owner FROM projects WHERE name = 'ESC' LIMIT 1")
         project = cur.fetchone()
         if not project:
-            print("❌ ESC project not found — run seed_esc_project.py first")
+            print("ESC project not found. Run seed_esc_project.py first")
             sys.exit(1)
         project_id = project["id"]
         owner_id = project["owner"]
-        print(f"📁 ESC project: {project_id}")
-        print(f"👤 Owner: {owner_id}")
+        print(f"ESC project: {project_id}")
+        print(f"Owner: {owner_id}")
 
-        # Get all phenotypes in ESC project
         cur.execute("""
             SELECT id, name FROM phenotypes
             WHERE project_id = %s ORDER BY name
         """, (project_id,))
         phenotypes = cur.fetchall()
-        print(f"📋 {len(phenotypes)} phenotypes found\n")
+        print(f"{len(phenotypes)} phenotypes found\n")
 
         total_saved = 0
 
@@ -114,7 +110,6 @@ def run():
             ph_id = ph["id"]
             ph_name = ph["name"]
 
-            # Get search terms for this phenotype
             cur.execute("""
                 SELECT term, is_regex, target_columns, system_ids
                 FROM phenotype_search_terms
@@ -124,25 +119,24 @@ def run():
             search_terms = cur.fetchall()
 
             if not search_terms:
-                print(f"   ⚠️  {ph_name}: no search terms, skipping")
+                print(f"   warning: {ph_name}: no search terms, skipping")
                 continue
 
             result = build_search_query([dict(st) for st in search_terms])
             if not result:
-                print(f"   ⚠️  {ph_name}: could not build query, skipping")
+                print(f"   warning: {ph_name}: could not build query, skipping")
                 continue
 
             sql, params = result
 
-            # Run the search
             cur.execute(sql, params)
             matches = cur.fetchall()
 
             if not matches:
-                print(f"   ⚪ {ph_name}: 0 matches")
+                print(f"   {ph_name}: 0 matches")
                 continue
 
-            # Insert selections — skip any that already exist
+            # ON CONFLICT so re-running doesn't duplicate selections
             saved = 0
             for m in matches:
                 try:
@@ -155,19 +149,19 @@ def run():
                     """, (str(uuid.uuid4()), ph_id, owner_id, m["id"]))
                     saved += cur.rowcount
                 except Exception as e:
-                    print(f"      ⚠️  skipping code {m['code']}: {e}")
+                    print(f"      warning: skipping code {m['code']}: {e}")
                     conn.rollback()
                     continue
 
             total_saved += saved
-            print(f"   ✅ {ph_name}: {saved} codes saved ({len(matches)} matched)")
+            print(f"   {ph_name}: {saved} codes saved ({len(matches)} matched)")
 
         conn.commit()
-        print(f"\n🎉 Done — {total_saved} total code selections saved across {len(phenotypes)} phenotypes")
+        print(f"\nDone: {total_saved} total code selections saved across {len(phenotypes)} phenotypes")
 
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         raise
     finally:
         cur.close()

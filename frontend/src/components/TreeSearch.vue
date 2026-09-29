@@ -12,7 +12,7 @@ import {usePhenotypes} from "@/composables/project/usePhenotypes.js";
 import {useCodeSystems} from "@/composables/shared/useCodeSystems.js";
 import ConfirmDialog from "primevue/confirmdialog";
 
-// --- use composable ---
+// use composable
 const {
   nodes,
   selectedNodeKeys,
@@ -55,7 +55,7 @@ const removeAllCodes = (event) => {
     });
 }
 
-// --- Load tree on component mount ---
+// Load tree on component mount
 onMounted(async () => {
     // console.log("in onMounted TreeSearch.vue:", nodes)
     if (!searchInputs.value.length) addSearchTerm(true)

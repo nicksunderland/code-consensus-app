@@ -11,14 +11,13 @@ vi.mock('@/composables/shared/useNotifications.js', () => ({
 
 import { useDownload } from './useDownload.js'
 
-describe('useDownload', () => {
-  it('merges consensus codes with systems', async () => {
+const mockTables = (pheno = {}) => {
     supabaseModule.supabase.from.mockImplementation((table) => {
       if (table === 'phenotypes') {
         return {
           select: vi.fn().mockReturnThis(),
           eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({ data: { name: 'Ph', description: '', project: { name: 'Proj', owner: { email: 'a' } }, source: '' }, error: null })
+          single: vi.fn().mockResolvedValue({ data: { name: 'Ph', description: '', project: { name: 'Proj', owner: { email: 'a' } }, source: '', ...pheno }, error: null })
         }
       }
       if (table === 'phenotype_consensus_codes') {
@@ -60,10 +59,23 @@ describe('useDownload', () => {
       }
       return { select: () => Promise.resolve({ data: null, error: null }) }
     })
+}
 
-    const { fetchExportData, hasCodes, displayContent } = useDownload()
+describe('useDownload', () => {
+  it('merges consensus codes with systems', async () => {
+    mockTables()
+    const { fetchExportData, hasCodes, displayContent, isPhenotypeFinalized } = useDownload()
     await fetchExportData('ph1')
     expect(hasCodes.value).toBe(true)
     expect(displayContent.value.length).toBeGreaterThan(0)
+    expect(isPhenotypeFinalized.value).toBe(false)
+  })
+
+  it('reports the stored finalised date', async () => {
+    mockTables({ finalized_at: '2026-09-29T10:00:00Z' })
+    const { fetchExportData, isPhenotypeFinalized, displayContent } = useDownload()
+    await fetchExportData('ph2')
+    expect(isPhenotypeFinalized.value).toBe(true)
+    expect(displayContent.value).toContain('2026-09-29T10:00:00Z')
   })
 })

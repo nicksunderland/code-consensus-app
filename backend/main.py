@@ -13,7 +13,7 @@ from uuid import UUID
 
 load_dotenv()
 
-# --- CORS Configuration ---
+# CORS
 def get_allowed_origins():
     origins_env = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("ORIGIN", "")
     if not origins_env:
@@ -31,7 +31,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Database Setup ---
+# Database
 DATABASE_URL = os.environ.get("VITE_DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set.")
@@ -64,7 +64,7 @@ def parse_example_project_ids(raw_ids: str | None) -> list[str]:
 EXAMPLE_PROJECT_IDS = parse_example_project_ids(os.environ.get("EXAMPLE_PROJECT_IDS"))
 
 
-# --- API Endpoints ---
+# Endpoints
 @app.get("/")
 async def root():
     return {"message": "API is running!"}
@@ -75,7 +75,6 @@ async def db_info():
     if not DATABASE_URL:
         return {"env_present": False}
 
-    # --- Parse DATABASE_URL ---
     p = urlparse(DATABASE_URL)
     # mask userinfo (user:pass)
     userinfo = p.netloc.split('@')[-1] if '@' in p.netloc else p.netloc
@@ -84,7 +83,6 @@ async def db_info():
     query = dict(parse_qs(p.query))
     sslmode = query.get("sslmode", [""])[0]
 
-    # --- Check IPv6 support ---
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.get("https://api64.ipify.org")
@@ -95,7 +93,6 @@ async def db_info():
         ipv6_reachable = False
         ipv6_error = str(e)
 
-    # --- Return combined info ---
     result = {
         "env_present": True,
         "scheme": p.scheme,
@@ -144,17 +141,14 @@ async def get_tree_nodes(parent_id: str | None = None):
     async with AsyncSessionLocal() as session:
         try:
             if parent_id is None:
-                # Use Case 1: Get root nodes (ICD-10, SNOMED-CT, etc.)
+                # roots, i.e. one node per code system
                 query_text = f"""
                     {query_base}
                     WHERE e.parent_id IS NULL
                     ORDER BY e.id;
                 """
             else:
-                # Use Case 2 & 3: Get children of any node
-                # The frontend passes the 'id' of the clicked node.
-                # This works for the "ICD-10" root node just as it
-                # does for any chapter or code.
+                # children of the clicked node (system root, chapter or code)
                 query_text = f"""
                     {query_base}
                     WHERE e.parent_id = :parent_id
@@ -162,11 +156,9 @@ async def get_tree_nodes(parent_id: str | None = None):
                 """
                 params = {"parent_id": int(parent_id)}
 
-            # Execute the constructed query
             result = await session.execute(text(query_text), params)
             entities = result.fetchall()
 
-            # Format the response for the frontend
             tree_nodes = [
                 {
                     "key": str(ent.id),
@@ -209,23 +201,22 @@ class SearchRequest(BaseModel):
 @app.post("/api/search-nodes")
 async def search_nodes(request: SearchRequest):
     """
-    Performs an advanced search with multiple searches,
-    combining them with 'AND'.
+    Runs one or more search terms against the codes table (terms are OR'd)
+    and returns the hits plus their ancestors so the tree can be rebuilt.
     """
     if not request.searches:
         return {"results": [], "ancestor_map": {}}
 
-    # --- Step 1: Dynamically build the search query ---
     where_clauses = ["e.is_selectable = TRUE"]
     params = {"limit": request.limit}
 
-    # --- Step 1a: Global system filter ---
+    # restrict to the union of systems across all searches
     all_system_ids = list({sid for s in request.searches for sid in s.system_ids})
     if all_system_ids:
         where_clauses.append("e.system_id = ANY(:all_system_ids)")
         params["all_system_ids"] = all_system_ids
 
-    # --- Build OR conditions for each search ---
+    # each search term is OR'd together
     or_clauses = []
 
     for i, s in enumerate(request.searches):
@@ -236,7 +227,6 @@ async def search_nodes(request: SearchRequest):
         param_name = f"term_{i}"
         params[param_name] = s.text if s.regex else f"%{s.text}%"
 
-        # Columns per search
         col_conditions = []
         ALLOWED_COLUMNS = {'code', 'description'}
         for col in s.columns:
@@ -244,7 +234,6 @@ async def search_nodes(request: SearchRequest):
                 raise HTTPException(status_code=400, detail=f"Invalid column: {col}")
             col_conditions.append(f"e.{col} {operator} :{param_name}")
 
-        # System filter for this search
         if s.system_ids:
             system_param = f"system_ids_{i}"
             params[system_param] = s.system_ids
@@ -255,7 +244,6 @@ async def search_nodes(request: SearchRequest):
     if or_clauses:
         where_clauses.append(f"({' OR '.join(or_clauses)})")
 
-    # --- Step 1b: Assemble and execute the 'find' query ---
     full_where_clause = " AND ".join(where_clauses)
     query_find_nodes = text(f"""
         SELECT e.id, e.code, e.description, e.materialized_path, e.is_leaf, e.is_selectable, e.system_id, s.name AS system_name
@@ -265,7 +253,7 @@ async def search_nodes(request: SearchRequest):
         LIMIT :limit;
     """)
 
-    # This base query is for building the ancestor map
+    # ancestors are needed so the frontend can build the tree down to each hit
     ancestor_query_base = """
         SELECT e.id, e.code, e.description, e.materialized_path, e.is_leaf, e.is_selectable, e.system_id, s.name AS system_name
         FROM codes e
@@ -283,7 +271,6 @@ async def search_nodes(request: SearchRequest):
             if not search_results:
                 return {"results": [], "ancestor_map": {}}
 
-            # --- Step 2: Parse paths (Unchanged) ---
             for row in search_results:
                 results_list.append({
                     "key": str(row.id),
@@ -306,7 +293,6 @@ async def search_nodes(request: SearchRequest):
                 if len(path_ids) > 1:
                     ancestor_ids.update(path_ids[:-1])
 
-            # --- Step 3: Fetch ancestors ---
             ancestor_map = {}
             if ancestor_ids:
                 query_get_ancestors = text(f"""
@@ -339,7 +325,6 @@ async def search_nodes(request: SearchRequest):
                     for row in ancestor_search_results
                 }
 
-            # --- Step 4: Return payload ---
             print(str(query_find_nodes))
             return {
                 "results": results_list,
@@ -378,7 +363,6 @@ async def get_cooccurrence(request: CooccurrenceRequest):
 
     metric_column = metric_map[request.metric]
 
-    # SQL query to get co-occurring codes
     sql = text(f"""
         WITH input_codes AS (
             SELECT unnest(CAST(:code_ids AS bigint[])) AS code_id
@@ -425,7 +409,6 @@ async def get_cooccurrence(request: CooccurrenceRequest):
             if not search_results:
                 return {"results": []}
 
-            # Build a list of fully labeled pairs
             results = [
                 {
                     "code_i": row.code_i,
@@ -513,7 +496,7 @@ async def get_metric_bounds(request: BoundsRequest):
             "ukb_event_count": {"min": 0.0, "max": 0.0}
         }
 
-    # 1. SQL: Fetches bounds for BOTH metrics in one go
+    # bounds for both metrics in one query
     sql = text("""
             SELECT 
                 MIN(jaccard) as min_j, MAX(jaccard) as max_j,

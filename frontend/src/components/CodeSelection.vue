@@ -21,7 +21,7 @@ import CodeImport from "@/components/CodeImport.vue";
 import {useCodeImport} from "@/composables/selection/useCodeImport.js";
 import {usePhenotypes} from "@/composables/project/usePhenotypes.js";
 
-// --- use composable ---
+// use composable
 const {
   tableRows,
   updateSelection,
@@ -85,7 +85,7 @@ const formatKappa = computed(() => {
     return val.toFixed(2);
 });
 
-// --- methods ---
+// methods
 const isVisibleDeselectAllCheck = ref(false);
 const handleSelectAll = (event) => {
   if (!isAllSelected.value) {

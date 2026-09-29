@@ -13,7 +13,7 @@ export function usePhenoFlow() {
 
     let nextId = 1;
 
-    // Ensure phenotypes loaded for palette only
+    // phenotypes are only needed for the palette
     if (!phenotypes.value.length) {
         fetchPhenotypes?.();
     }

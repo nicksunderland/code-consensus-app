@@ -4,7 +4,7 @@ import { useProjects } from "@/composables/project/useProjects.js";
 import { useAuth } from "@/composables/auth/useAuth.js";
 import { useNotifications } from '../shared/useNotifications.js'
 
-// globals - these are set once in memory
+// module-level state, shared by every caller
 const phenotypes = ref([]);          // list for active project
 const emptyPhenotype = {id: '', user_id: '', name: '', description: '', project_id: '', source: ''};
 const currentPhenotype = ref( { ...emptyPhenotype });
@@ -12,14 +12,11 @@ const currentPhenotype = ref( { ...emptyPhenotype });
 
 // export
 export function usePhenotypes() {
-    // Get dependencies inside the composable function
     const { emitError, emitSuccess } = useNotifications()
     const auth = useAuth()
     const projects = useProjects()
 
-    // ----------------------------
-    // STATE
-    // ----------------------------
+    // State
     const loading = ref(false);
     const nameError = ref(false);
     const isEditingExisting = ref(false);
@@ -28,10 +25,8 @@ export function usePhenotypes() {
         setTimeout(() => nameError.value = false, 1200)
     }
 
-    // ----------------------------
-    // HELPERS
-    // ----------------------------
-    // check if an ID exists in the phenotypes DB table
+    // Helpers
+    // does this id exist in the phenotypes table?
     async function phenotypeExists(id) {
         if (!auth.user.value) return;
 
@@ -53,7 +48,7 @@ export function usePhenotypes() {
         return !!data;
     }
 
-    // Load phenotypes for the active project only
+    // phenotypes for the active project
     async function fetchPhenotypes() {
         if (!auth.user.value) return;
         if (!projects.currentProject.value) {
@@ -81,9 +76,7 @@ export function usePhenotypes() {
         phenotypes.value = data
     }
 
-    // ----------------------------
-    // LOAD ONE PHENOTYPE
-    // ----------------------------
+    // Load one phenotype
     async function loadPhenotype(id) {
         if (!id) return
         loading.value = true
@@ -102,9 +95,7 @@ export function usePhenotypes() {
         isEditingExisting.value = true
     }
 
-  // ----------------------------
-  // CREATE OR UPDATE PHENOTYPE
-  // ----------------------------
+  // Create or update phenotype
     async function savePhenotype(update = false) {
         if (!auth.user.value) {
             emitError("Not authenticated", "Please log in to save phenotypes.")
@@ -123,9 +114,7 @@ export function usePhenotypes() {
             return emitError("Missing name", "Please provide a name.")
         }
 
-        // ----------------------------
-        // UPDATE EXISTING PHENOTYPE
-        // ----------------------------
+        // Update existing phenotype
         if (update === true && pheno.id) {
             const {data, error} = await supabase
                 .from("phenotypes")
@@ -143,7 +132,6 @@ export function usePhenotypes() {
                 return emitError("Update failed", error.message);
             }
 
-            // Replace existing phenotype in local list
             const idx = phenotypes.value.findIndex(p => p.name === pheno.name);
             if (idx !== -1) phenotypes.value[idx] = data;
 
@@ -151,9 +139,7 @@ export function usePhenotypes() {
             return data;
         }
 
-        // ----------------------------
-        // CREATE NEW PHENOTYPE
-        // ----------------------------
+        // Create new phenotype
         const { data, error } = await supabase
             .from("phenotypes")
             .insert({
@@ -183,9 +169,7 @@ export function usePhenotypes() {
         return data;
     }
 
-    // ----------------------------
-    // DELETE
-    // ----------------------------
+    // Delete
     async function deletePhenotype() {
         if (!currentPhenotype.value) return
 

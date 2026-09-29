@@ -1,6 +1,4 @@
 """
-seed_esc_project.py
-===================
 Creates the ESC project with one phenotype per data element in
 db/data/Data Elements.xltx. Each phenotype gets auto-generated
 search terms derived from its name. Code selection is left to the user.
@@ -9,7 +7,8 @@ Usage:
     python db/seed_esc_project.py
 
 Requires VITE_DATABASE_URL in backend/.env.
-Prints the new project UUID at the end — add it to EXAMPLE_PROJECT_IDS.
+Prints the new project UUID at the end; add it to EXAMPLE_PROJECT_IDS
+if it should appear on the examples page.
 """
 
 import os
@@ -26,7 +25,7 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env")
 
 DB_URL = os.getenv("VITE_DATABASE_URL")
 if not DB_URL:
-    print("❌ VITE_DATABASE_URL not set in .env")
+    print("VITE_DATABASE_URL not set in .env")
     sys.exit(1)
 
 DATA_FILE = Path(__file__).resolve().parent / "data" / "Data Elements.xltx"
@@ -38,19 +37,11 @@ STOP_WORDS = {
 }
 
 
-# =============================================================================
-# Build search terms from a phenotype name
-# =============================================================================
 def make_search_terms(name: str) -> list[dict]:
-    """
-    Returns a list of phenotype_search_terms rows for a given name.
-
-    1. Plain ILIKE term — the name itself, targets description column.
-    2. Regex term — key words joined with .* for flexible matching.
-    """
+    """phenotype_search_terms rows for a phenotype name (description column only)."""
     terms = []
 
-    # Term 1: plain name search against description
+    # plain ILIKE on the full name
     terms.append({
         "term": name.strip(),
         "is_regex": False,
@@ -58,7 +49,7 @@ def make_search_terms(name: str) -> list[dict]:
         "row_order": 0,
     })
 
-    # Term 2: regex from significant words
+    # plus a looser regex over the significant words, e.g. angina.*pectoris
     words = re.sub(r"[^\w\s]", "", name.lower()).split()
     key_words = [w for w in words if w not in STOP_WORDS and len(w) > 2]
     if len(key_words) >= 2:
@@ -73,9 +64,6 @@ def make_search_terms(name: str) -> list[dict]:
     return terms
 
 
-# =============================================================================
-# Read phenotypes from Excel
-# =============================================================================
 def load_data_elements():
     wb = openpyxl.load_workbook(DATA_FILE, data_only=True)
     ws = wb.active
@@ -94,40 +82,29 @@ def load_data_elements():
     return elements
 
 
-# =============================================================================
-# Main
-# =============================================================================
 def run():
     elements = load_data_elements()
-    print(f"📋 Loaded {len(elements)} data elements from Excel")
+    print(f"Loaded {len(elements)} data elements from Excel")
 
     conn = psycopg2.connect(DB_URL)
     conn.autocommit = False
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     try:
-        # ------------------------------------------------------------------
-        # 1. Pick owner — first user in user_profiles
-        # ------------------------------------------------------------------
+        # owner defaults to the earliest account
         cur.execute("SELECT user_id FROM user_profiles ORDER BY created_at LIMIT 1")
         row = cur.fetchone()
         if not row:
-            print("❌ No users found — create an account first then re-run")
+            print("No users found. Create an account first, then re-run")
             sys.exit(1)
         owner_id = row["user_id"]
-        print(f"👤 Owner: {owner_id}")
+        print(f"Owner: {owner_id}")
 
-        # ------------------------------------------------------------------
-        # 2. Look up SNOMED-CT system_id for search term scoping
-        # ------------------------------------------------------------------
         cur.execute("SELECT id FROM code_systems WHERE name = 'SNOMED-CT' LIMIT 1")
         sys_row = cur.fetchone()
         snomed_system_id = sys_row["id"] if sys_row else None
-        print(f"🔬 SNOMED-CT system_id: {snomed_system_id}")
+        print(f"SNOMED-CT system_id: {snomed_system_id}")
 
-        # ------------------------------------------------------------------
-        # 3. Create (or reuse) ESC project
-        # ------------------------------------------------------------------
         cur.execute(
             "SELECT id FROM projects WHERE name = 'ESC' AND owner = %s",
             (owner_id,)
@@ -135,7 +112,7 @@ def run():
         existing = cur.fetchone()
         if existing:
             project_id = existing["id"]
-            print(f"♻️  Reusing existing ESC project: {project_id}")
+            print(f"Reusing existing ESC project: {project_id}")
         else:
             project_id = str(uuid.uuid4())
             cur.execute("""
@@ -147,14 +124,10 @@ def run():
                 "ESC",
                 "European Society of Cardiology data elements with canonical SNOMED CT codes",
             ))
-            print(f"✅ Created ESC project: {project_id}")
+            print(f"Created ESC project: {project_id}")
 
-        # ------------------------------------------------------------------
-        # 4. Create phenotypes + search terms
-        # ------------------------------------------------------------------
         created = skipped = 0
         for el in elements:
-            # Skip if already exists
             cur.execute("""
                 SELECT id FROM phenotypes
                 WHERE project_id = %s AND lower(trim(name)) = lower(trim(%s))
@@ -176,7 +149,6 @@ def run():
                 el["source"],
             ))
 
-            # Insert search terms
             search_terms = make_search_terms(el["name"])
             for st in search_terms:
                 system_ids = [snomed_system_id] if snomed_system_id else []
@@ -195,17 +167,17 @@ def run():
                 ))
 
             created += 1
-            print(f"   ✅ {el['name']}")
+            print(f"  + {el['name']}")
 
         conn.commit()
-        print(f"\n🎉 Done — {created} phenotypes created, {skipped} already existed")
-        print(f"\n📌 ESC project UUID: {project_id}")
+        print(f"\nDone: {created} phenotypes created, {skipped} already existed")
+        print(f"\nESC project UUID: {project_id}")
         print(f"\nAdd to your backend/.env:")
         print(f"   EXAMPLE_PROJECT_IDS={project_id}")
 
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         raise
     finally:
         cur.close()

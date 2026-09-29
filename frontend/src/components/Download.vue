@@ -12,7 +12,7 @@ import Checkbox from 'primevue/checkbox'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
 
-// --- COMPOSABLES ---
+// Composables
 const toast = useToast()
 const { currentPhenotype } = usePhenotypes()
 const {
@@ -28,15 +28,14 @@ const {
     triggerDownload
 } = useDownload()
 
-// --- STATE ---
+// State
 const formatOptions = [
     { name: 'JSON', value: 'json' },
     { name: 'YAML', value: 'yaml' },
     { name: 'Text', value: 'text' }
 ]
 
-// --- UI HELPERS ---
-// These remain here because they are purely visual (icons/syntax highlighting)
+// display only (icons / syntax highlighting)
 const currentLanguage = computed(() => {
     return selectedFormat.value === 'text' ? 'plaintext' : selectedFormat.value
 })
@@ -49,7 +48,7 @@ const fileIcon = computed(() => {
     return map[selectedFormat.value] || 'pi pi-file'
 })
 
-// --- HANDLERS ---
+// Handlers
 const handleDownload = () => {
     triggerDownload()
     toast.add({ severity: 'info', summary: 'Download Started', detail: fileName.value, life: 2000 })
@@ -59,7 +58,7 @@ watch(
     [isDownloadActive, () => currentPhenotype.value?.id],
     ([isActive, newId]) => {
         if (isActive && newId) {
-            // The composable handles the "don't refetch if cached" logic
+            // no-op if already cached
             fetchExportData(newId)
         }
     },

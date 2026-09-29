@@ -2,8 +2,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
 import { createNotificationsMock } from '../../../test/mocks/notifications.mock.js'
 
-describe('useCodeSelection saveSelections', () => {
+describe('useCodeSelection', () => {
   let upsertMock
+  let phenotypeUpdate
+  let storedFinalizedAt
   let useCodeSelection
   let treeState
   let importedData
@@ -53,9 +55,22 @@ describe('useCodeSelection saveSelections', () => {
 
     const upsert = vi.fn().mockResolvedValue({ error: null })
     upsertMock = upsert
+    storedFinalizedAt = null
+    phenotypeUpdate = vi.fn((values) => {
+      storedFinalizedAt = values.finalized_at
+      return { eq: vi.fn().mockResolvedValue({ error: null }) }
+    })
     vi.doMock('@/composables/shared/useSupabase.js', () => {
       const supabaseMock = {
         from: vi.fn((table) => {
+          if (table === 'phenotypes') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => Promise.resolve({ data: [{ finalized_at: storedFinalizedAt }], error: null }))
+              })),
+              update: phenotypeUpdate
+            }
+          }
           if (table === 'user_code_selections') {
             return {
               upsert,
@@ -125,5 +140,19 @@ describe('useCodeSelection saveSelections', () => {
     await saveSelections()
     expect(upsertMock).toHaveBeenCalledTimes(2)
     expect(tableRows.value.length).toBeGreaterThan(0)
+  })
+
+  it('stores finalised state on the phenotype and clears it on unlock', async () => {
+    const { saveConsensus, unlockConsensus, isFinalized } = useCodeSelection()
+
+    await saveConsensus(true)
+    expect(phenotypeUpdate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ finalized_by: 'user-1', finalized_at: expect.any(String) })
+    )
+    expect(isFinalized.value).toBe(true)
+
+    await unlockConsensus()
+    expect(phenotypeUpdate).toHaveBeenLastCalledWith({ finalized_at: null, finalized_by: null })
+    expect(isFinalized.value).toBe(false)
   })
 })

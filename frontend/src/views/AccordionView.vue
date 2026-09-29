@@ -7,7 +7,7 @@ import AccordionContent from 'primevue/accordioncontent';
 import Footer from "@/components/Footer.vue";
 import 'primeicons/primeicons.css';
 
-// Import specific tab components
+// tabs
 import TreeSearch from "@/components/TreeSearch.vue";
 import SelectedCodes from "@/components/CodeSelection.vue";
 import Analysis from "@/components/Analysis.vue";
@@ -16,12 +16,12 @@ import DerivedPhenotypes from "@/views/PhenoFlowView.vue";
 import PhenotypeDefinition from "@/components/PhenotypeDefinition.vue";
 import { useCodeSelection } from "@/composables/selection/useCodeSelection.js";
 
-// Import Composables specific to tab logic
+// composables
 import { useAnalysis } from "@/composables/analysis/useAnalysis.js";
 import { useDownload } from "@/composables/selection/useDownload.js";
 import { usePhenotypes } from "@/composables/project/usePhenotypes.js";
 
-// --- TAB LOGIC ---
+// Tab logic
 const { isAnalysisActive } = useAnalysis();
 const { isDownloadActive } = useDownload();
 const { rehydrateCurrentPhenotype } = useCodeSelection();

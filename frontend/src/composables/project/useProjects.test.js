@@ -13,7 +13,7 @@ vi.mock('../shared/useNotifications.js', () => {
   return notifications
 })
 
-// Re-import mocks for usage after hoisting
+// re-import the mocks after vi.mock hoisting
 const supabaseModule = await import('@/composables/shared/useSupabase.js')
 const notificationsModule = await import('../shared/useNotifications.js')
 

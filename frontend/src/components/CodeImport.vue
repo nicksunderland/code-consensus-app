@@ -13,7 +13,7 @@ import InputText from 'primevue/inputtext'
 import Card from 'primevue/card'
 import { useCodeImport } from "@/composables/selection/useCodeImport.js";
 
-// --- Connect to Composable ---
+// composable
 const {
   showImportDialog,
   step,
@@ -43,8 +43,7 @@ const {
 } = useCodeImport()
 
 
-// --- UI Event Wrappers ---
-// These bridges are needed because PrimeVue returns event objects
+// PrimeVue passes event objects, so unwrap them before calling the composable
 const onFileSelect = async (event) => {
   const file = event.files[0]
   if (file) await parseFile(file)
@@ -55,7 +54,7 @@ const onDrop = async (event) => {
   if (file) await parseFile(file)
 }
 
-// --- UI Styling Helpers ---
+// styling
 const getColumnClass = (field) => {
   if (field === columnMapping.value.code) return 'text-primary'
   if (field === columnMapping.value.system) return 'text-blue-600'

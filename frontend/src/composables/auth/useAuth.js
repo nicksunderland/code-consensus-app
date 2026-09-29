@@ -2,10 +2,10 @@ import { ref, computed } from 'vue'
 import { supabase } from '@/composables/shared/useSupabase.js'
 import { useNotifications } from '../shared/useNotifications.js'
 
-// required composables
+// composables
 const { emitError, emitSuccess } = useNotifications()
 
-// globals - these are set once in memory
+// module-level state, shared by every caller
 const user = ref(null)
 const currentDialog = ref(null)
 
@@ -17,7 +17,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 // export
 export function useAuth() {
 
-    // Helper functions to manipulate dialog
+    // dialogs
     function openLogin() {
         currentDialog.value = 'login'
     }
@@ -34,7 +34,7 @@ export function useAuth() {
         currentDialog.value = null
     }
 
-    // Auth methods
+    // auth
     async function loginGoogle() {
         const {error} = await supabase.auth.signInWithOAuth({
             provider: 'google',

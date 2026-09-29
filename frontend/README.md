@@ -1,38 +1,18 @@
 # frontend
 
-This template should help get you started developing with Vue 3 in Vite.
-
-## Recommended IDE Setup
-
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
-
-## Recommended Browser Setup
-
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd) 
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
-
-## Customize configuration
-
-See [Vite Configuration Reference](https://vite.dev/config/).
-
-## Project Setup
+Vue 3 + Vite + PrimeVue. Talks to Supabase directly for projects, phenotypes and selections, and to the FastAPI backend (`VITE_API_URL`) for tree browsing, code search and the analysis metrics.
 
 ```sh
 npm install
+npm run dev      # http://localhost:5173
+npm test         # vitest
+npm run build    # -> dist/, deployed on Netlify
 ```
 
-### Compile and Hot-Reload for Development
+Needs a `.env` with `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
-```sh
-npm run dev
-```
-
-### Compile and Minify for Production
-
-```sh
-npm run build
-```
+Layout:
+- `src/views/` pages (the consensus tool is `AccordionView.vue`)
+- `src/components/` the accordion panels and PhenoFlow nodes
+- `src/composables/<area>/` state and data access, one test file per composable
+- `test/mocks/` Supabase / API client mocks for the tests

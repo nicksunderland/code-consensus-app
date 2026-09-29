@@ -15,7 +15,7 @@ import { useNotifications } from "@/composables/shared/useNotifications.js";
 import { useTreeSearch } from "@/composables/tree/useTreeSearch.js";
 import { useCodeSelection } from "@/composables/selection/useCodeSelection.js";
 
-// --- 1. SETUP GLOBAL TOASTS & NOTIFICATIONS ---
+// global toasts
 const toast = useToast()
 const notifications = useNotifications()
 notifications.setErrorHandler((summary, error) => {
@@ -25,7 +25,7 @@ notifications.setSuccessHandler((summary, detail) => {
     toast.add({ severity: 'success', summary, detail, life: 20000 })
 })
 
-// --- 2. SETUP GLOBAL AUTH WATCHER ---
+// auth watcher
 const { user } = useAuth()
 const { fetchProjects, emptyProjects } = useProjects()
 const { fetchPhenotypes, emptyPhenotypes } = usePhenotypes()
@@ -46,7 +46,7 @@ watch(user, async (newUser) => {
   { immediate: true }
 )
 
-// --- 3. GET MENU BAR ITEMS ---
+// menu bar
 const { menuItems } = useMenu()
 </script>
 

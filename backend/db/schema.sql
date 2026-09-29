@@ -1,18 +1,13 @@
--- ============================================================
--- PHENOTYPE BUILDER - SIMPLIFIED DATABASE SCHEMA
--- ============================================================
+-- Phenotype builder - simplified database schema
 -- Bare bones functional design
 -- All project members can view all project phenotypes
 -- No denormalized counts - calculate on demand
--- ============================================================
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
--- ============================================================
--- 1. CODE SYSTEMS & CODES
--- ============================================================
+-- Code systems & codes
 
 CREATE TABLE code_systems (
     id SERIAL PRIMARY KEY,
@@ -69,9 +64,7 @@ CREATE TRIGGER sync_code_system_name_trigger
     BEFORE INSERT OR UPDATE OF system_id ON codes
     FOR EACH ROW EXECUTE FUNCTION sync_code_system_name();
 
--- ============================================================
--- 2. CODE CO-OCCURRENCE
--- ============================================================
+-- Code co-occurrence
 
 CREATE TABLE code_cooccurrence (
     id BIGSERIAL PRIMARY KEY,
@@ -88,9 +81,7 @@ CREATE TABLE code_cooccurrence (
 CREATE INDEX idx_cooccurrence_code_i ON code_cooccurrence(code_i);
 CREATE INDEX idx_cooccurrence_code_j ON code_cooccurrence(code_j);
 
--- ============================================================
--- 2b. CODE COUNTS (per dataset)
--- ============================================================
+-- Code counts (per dataset)
 
 CREATE TABLE code_counts (
     code_id BIGINT NOT NULL REFERENCES codes(id) ON DELETE CASCADE,
@@ -105,9 +96,7 @@ CREATE TABLE code_counts (
     CONSTRAINT code_counts_event_nonneg CHECK (event_count IS NULL OR event_count >= 0)
 );
 
--- ============================================================
--- 3. USER PROFILES
--- ============================================================
+-- User profiles
 
 CREATE TABLE user_profiles (
     user_id UUID PRIMARY KEY,
@@ -137,9 +126,7 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION handle_new_user();
 
--- ============================================================
--- 4. PROJECTS (with embedded members)
--- ============================================================
+-- Projects (with embedded members)
 
 CREATE TABLE projects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -207,9 +194,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ============================================================
--- 5. PHENOTYPES
--- ============================================================
+-- Phenotypes
 
 CREATE TABLE phenotypes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -218,6 +203,8 @@ CREATE TABLE phenotypes (
     name TEXT NOT NULL,
     description TEXT,
     source TEXT,
+    finalized_at TIMESTAMPTZ, -- NULL = draft
+    finalized_by UUID REFERENCES user_profiles(user_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -240,9 +227,7 @@ CREATE TRIGGER update_phenotypes_updated_at
     BEFORE UPDATE ON phenotypes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ============================================================
--- 5b. PHENOFLOWS (project-scoped graph storage)
--- ============================================================
+-- Phenoflows (project-scoped graph storage)
 CREATE TABLE phenoflows (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -302,9 +287,7 @@ USING (
 CREATE INDEX idx_phenoflows_project ON phenoflows(project_id);
 CREATE INDEX idx_phenoflows_updated ON phenoflows(updated_at DESC);
 
--- ============================================================
--- 6. PHENOTYPE SEARCH TERMS
--- ============================================================
+-- Phenotype search terms
 
 CREATE TABLE phenotype_search_terms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -318,9 +301,7 @@ CREATE TABLE phenotype_search_terms (
 
 CREATE INDEX idx_search_terms_phenotype ON phenotype_search_terms(phenotype_id);
 
--- ============================================================
--- 7. USER CODE SELECTIONS (unified standard + orphan codes)
--- ============================================================
+-- User code selections (unified standard + orphan codes)
 
 CREATE TABLE user_code_selections (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -387,9 +368,7 @@ CREATE TRIGGER cache_code_metadata_trigger
     BEFORE INSERT OR UPDATE OF code_id, code_type ON user_code_selections
     FOR EACH ROW EXECUTE FUNCTION cache_code_metadata();
 
--- ============================================================
--- ROW LEVEL SECURITY (RLS)
--- ============================================================
+-- Row level security
 
 -- Enable RLS on tables
 ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
@@ -397,9 +376,7 @@ ALTER TABLE phenotypes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE phenotype_search_terms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_code_selections ENABLE ROW LEVEL SECURITY;
 
--- ============================================================
--- PROJECTS RLS
--- ============================================================
+-- RLS: Projects
 
 -- Users can view projects they own or are members of
 CREATE POLICY "Users can view their projects"
@@ -425,9 +402,7 @@ CREATE POLICY "Owners can delete their projects"
 ON projects FOR DELETE
 USING (owner = auth.uid());
 
--- ============================================================
--- PHENOTYPES RLS
--- ============================================================
+-- RLS: Phenotypes
 
 -- Users can view phenotypes in projects they own or are members of
 CREATE POLICY "Users can view project phenotypes"
@@ -476,9 +451,7 @@ USING (
     )
 );
 
--- ============================================================
--- PHENOTYPE SEARCH TERMS RLS
--- ============================================================
+-- RLS: Phenotype search terms
 
 -- Users can view search terms for phenotypes they can access
 CREATE POLICY "Users can view search terms"
@@ -536,9 +509,7 @@ USING (
     )
 );
 
--- ============================================================
--- USER CODE SELECTIONS RLS
--- ============================================================
+-- RLS: User code selections
 
 -- Users can view all selections for phenotypes they can access
 CREATE POLICY "Users can view code selections"
@@ -591,9 +562,7 @@ CREATE POLICY "Users can delete their own selections"
 ON user_code_selections FOR DELETE
 USING (user_id = auth.uid());
 
--- ============================================================
--- HELPER VIEWS
--- ============================================================
+-- Helper views
 
 -- View: User's accessible projects
 CREATE OR REPLACE VIEW user_accessible_projects AS
@@ -640,9 +609,7 @@ FROM user_code_selections
 WHERE is_consensus = TRUE
 ORDER BY phenotype_id, code_type, code_id, orphan_id, created_at DESC;
 
--- ============================================================
--- UTILITY FUNCTIONS
--- ============================================================
+-- Utility functions
 
 -- Check if user can access a phenotype
 CREATE OR REPLACE FUNCTION user_can_access_phenotype(
@@ -703,9 +670,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ============================================================
--- COMMENTS
--- ============================================================
+-- Comments
 
 COMMENT ON TABLE phenotypes IS 'Phenotype definitions - always belong to a project';
 COMMENT ON TABLE user_code_selections IS 'Unified table for both standard codes and orphan/custom codes - distinguished by code_type. Consensus is duplicated across all users for simplicity.';
@@ -719,7 +684,3 @@ COMMENT ON TABLE code_cooccurrence IS 'Symmetric storage: code_i < code_j to avo
 COMMENT ON COLUMN code_cooccurrence.pair_count IS 'Suppressed/rounded counts of individuals with both codes';
 COMMENT ON COLUMN projects.member_ids IS 'Array of member user IDs for fast access checks';
 COMMENT ON COLUMN projects.member_data IS 'JSONB array with full member details';
-
--- ============================================================
--- END OF SCHEMA
--- ============================================================

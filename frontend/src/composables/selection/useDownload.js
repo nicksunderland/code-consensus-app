@@ -2,8 +2,7 @@ import { ref, computed } from 'vue'
 import { supabase } from '@/composables/shared/useSupabase.js'
 import { useNotifications } from '@/composables/shared/useNotifications.js'
 
-// --- SHARED STATE (Singleton) ---
-// Defined outside the function so it is shared across components
+// module-level state, shared across components
 const isDownloadActive = ref(false)
 const rawData = ref(null)
 const isGenerating = ref(false)
@@ -15,17 +14,14 @@ export function useDownload() {
     // User preferences
     const selectedFormat = ref('json')
     const includeHeader = ref(true)
-    // --- COMPUTED: STATE HELPERS ---
+    // computed
     const hasCodes = computed(() => {
         return rawData.value &&
                Array.isArray(rawData.value.codes) &&
                rawData.value.codes.length > 0
     })
 
-    // --------------------------------------------------------
-    // FETCH DATA
-    // --------------------------------------------------------
-    // --- FETCH DATA ---
+    // Fetch data
     const fetchExportData = async (phenotypeId) => {
         if (!phenotypeId) return
         if (rawData.value?.metadata?.id === phenotypeId) return
@@ -34,13 +30,10 @@ export function useDownload() {
         rawData.value = null
 
         try {
-            // -------------------------------
-            // 1. Fetch phenotype metadata
-            // -------------------------------
             const { data: pheno, error: phenoError } = await supabase
                 .from('phenotypes')
                 .select(`
-                    name, description, source, created_at,
+                    name, description, source, created_at, finalized_at,
                     project:projects(name, owner:user_profiles(email))
                 `)
                 .eq('id', phenotypeId)
@@ -51,9 +44,6 @@ export function useDownload() {
                 return
             }
 
-            // -------------------------------
-            // 2. Fetch selected consensus codes
-            // -------------------------------
             const { data: consensus, error: consensusError } = await supabase
                 .from('phenotype_consensus_codes')
                 .select('code_type, code_id, orphan_id, code_text, code_description, system_name, consensus_comments')
@@ -86,9 +76,7 @@ export function useDownload() {
                 codesData.forEach(c => codeMap.set(c.id, c))
             }
 
-            // --------------------------------------------
-            // 4. Load all system metadata for orphan linking
-            // --------------------------------------------
+            // system metadata, needed to label orphan codes
             const { data: allSystems } = await supabase
                 .from("code_systems")
                 .select("name, version, description, url")
@@ -96,9 +84,7 @@ export function useDownload() {
             const systemLookup = new Map()
             allSystems?.forEach(sys => systemLookup.set(sys.name, sys))
 
-            // --------------------------------------------
-            // 4. Compute agreement stats across user selections
-            // --------------------------------------------
+            // agreement stats across raters
             let selectionRows = [];
             try {
                 const { data: selectionData, error: selectionError } = await supabase
@@ -147,9 +133,6 @@ export function useDownload() {
                 kappa = denom ? (pBar - pE) / denom : 0;
             }
 
-            // --------------------------------------------
-            // 5. Merge consensus rows into unified structure
-            // --------------------------------------------
             const mergedCodes = consensusList.map(row => {
                 const isOrphan = row.code_type === 'orphan' || !!row.orphan_id;
 
@@ -183,9 +166,6 @@ export function useDownload() {
                 }
             }).filter(Boolean)
 
-            // --------------------------------------------
-            // 6. Extract unique system definitions
-            // --------------------------------------------
             const systemMap = new Map()
 
             mergedCodes.forEach(c => {
@@ -205,16 +185,10 @@ export function useDownload() {
 
             const uniqueSystems = Array.from(systemMap.values())
 
-            // --------------------------------------------
-            // 7. Determine finalized status
-            // --------------------------------------------
-            const finalizedDate = null
+            const finalizedDate = pheno.finalized_at || null
 
-            isPhenotypeFinalized.value = false
+            isPhenotypeFinalized.value = !!finalizedDate
 
-            // --------------------------------------------
-            // 8. Build export data object
-            // --------------------------------------------
             rawData.value = {
                 metadata: {
                     id: phenotypeId,
@@ -250,9 +224,7 @@ export function useDownload() {
     }
 
 
-    // --------------------------------------------------------
-    // FORMATTERS
-    // --------------------------------------------------------
+    // Formatters
     const getRichHeader = (commentChar) => {
         if (!includeHeader.value || !rawData.value) return ""
         const m = rawData.value.metadata
@@ -285,7 +257,7 @@ export function useDownload() {
             const m = data.metadata
             const cs = data.code_systems
 
-            // 1. Metadata Block
+            // metadata
             let out = `metadata:\n`
             out += `  name: "${m.name}"\n`
             out += `  project: "${m.project}"\n`
@@ -294,7 +266,7 @@ export function useDownload() {
             out += `  finalized_at: "${m.finalized_at}"\n`
             out += `  description: "${m.description}"\n`
 
-            // 2. Stats Block
+            // stats
             out += `code_systems:\n`
             cs.forEach(sys => {
                 out += `  - name: "${sys.name}"\n`
@@ -303,7 +275,7 @@ export function useDownload() {
                 out += `    description: "${sys.description}"\n`
             })
 
-            // 3. Codes Block
+            // codes
             out += `codes:\n`
             data.codes.forEach(c => {
                 out += `  - code: "${c.code}"\n`
@@ -324,18 +296,14 @@ export function useDownload() {
         }
     }
 
-    // --------------------------------------------------------
-    // COMPUTED OUTPUTS
-    // --------------------------------------------------------
-    // 1. The actual text content to display/download
+    // output text for the preview and the download
     const displayContent = computed(() => {
         if (!rawData.value) return ''
 
         const fmt = selectedFormat.value
         const formatter = formatters[fmt] || formatters.json
 
-        // Only pass the header function if format is 'text'
-        // JSON and YAML ignore the header toggle and output pure structure
+        // header toggle only applies to text; JSON/YAML are structure only
         if (fmt === 'text') {
             return formatter(rawData.value, getRichHeader)
         } else {
@@ -343,7 +311,6 @@ export function useDownload() {
         }
     })
 
-    // 2. The filename based on the phenotype name
     const fileName = computed(() => {
         if (!rawData.value) return 'download.txt'
         const name = rawData.value.metadata.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')
@@ -351,9 +318,7 @@ export function useDownload() {
         return `${name}.${ext}`
     })
 
-    // --------------------------------------------------------
-    // ACTIONS
-    // --------------------------------------------------------
+    // Actions
     const triggerDownload = () => {
         if (!displayContent.value) return
 
@@ -374,10 +339,9 @@ export function useDownload() {
     }
 
     const resetDownloadCache = async (phenotypeId) => {
-        // 1. Clear the cache
         rawData.value = null
 
-        // 2. If the Download Accordion is currently open, fetch immediately
+        // refetch straight away if the download panel is open
         if (isDownloadActive.value && phenotypeId) {
             await fetchExportData(phenotypeId)
         }

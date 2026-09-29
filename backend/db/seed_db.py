@@ -12,9 +12,7 @@ sys.setrecursionlimit(5000)
 csv.field_size_limit(10_000_000)
 
 
-# ==========================================================
-# 0. GLOBAL CONFIG & UTILS
-# ==========================================================
+# Global config & utils
 
 def normalize_code(code: str) -> str:
     if not code: return ""
@@ -71,7 +69,7 @@ def get_common_description(descriptions: List[str]) -> str:
     return f"{common}"
 
 
-# --- MAPPINGS ---
+# Mappings
 ROMAN_MAP = {
     "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5,
     "VI": 6, "VII": 7, "VIII": 8, "IX": 9, "X": 10,
@@ -191,13 +189,13 @@ def find_icd9_range_parent(target_code: str, all_keys: list, is_proc: bool = Fal
     If is_proc is True, consider 2-digit procedure prefixes as possible matches.
     Otherwise (diagnosis), only consider 3-digit category prefixes.
     """
-    # --- Existing Exact Match Logic ---
+    # Exact match first
     if len(target_code) >= 3:
         p3 = target_code[:3]
         if f"{p3}-{p3}" in all_keys:
             return f"{p3}-{p3}"
 
-    # 1. Prepare Target Values
+    # Values to test against each range
     match = re.match(r'^(\d+)', target_code)
     if not match:
         return None
@@ -215,7 +213,7 @@ def find_icd9_range_parent(target_code: str, all_keys: list, is_proc: bool = Fal
     if not target_vals:
         return None
 
-    # 2. Scan Blocks and find smallest container
+    # Scan blocks and keep the smallest one containing the code
     best_parent = None
     best_range_size = float('inf')
 
@@ -228,11 +226,11 @@ def find_icd9_range_parent(target_code: str, all_keys: list, is_proc: bool = Fal
 
         start, end = int(parts[0]), int(parts[1])
 
-        # Check containment for ANY target value calculated
+        # Contained if any of the target values falls inside
         for target_val in target_vals:
             if start <= target_val <= end:
                 size = end - start
-                # Prioritize the smallest valid range
+                # prefer the smallest range
                 if size < best_range_size:
                     best_range_size = size
                     best_parent = key
@@ -288,9 +286,7 @@ def inject_icd9_chapters(graph, system_id, is_proc=False):
         }
 
 
-# ==========================================================
-# 1. THE UNIFIED GRAPH
-# ==========================================================
+# The unified graph
 class UnifiedGraph:
     def __init__(self, family_name, root_code, root_desc):
         self.family_name = family_name
@@ -300,7 +296,7 @@ class UnifiedGraph:
         self.base_system_id = None
 
     def add_system_data(self, codes: List[Dict], system_name: str, system_id: int):
-        print(f"   🌱 Merging {len(codes)} codes from {system_name} into {self.family_name}...")
+        print(f"   Merging {len(codes)} codes from {system_name} into {self.family_name}...")
         if self.base_system_id is None: self.base_system_id = system_id
 
         count = 0
@@ -320,11 +316,11 @@ class UnifiedGraph:
         print(f"      -> Added {count} new nodes.")
 
     def finalize_and_export(self, start_global_id: int):
-        print(f"   🌳 Wiring the {self.family_name} tree...")
+        print(f"   Wiring the {self.family_name} tree...")
         root_sys_id = self.base_system_id if self.base_system_id else 1
         root_key = self.root_code
 
-        # --- STEP 0: SYNTHESIZE MISSING PARENTS ---
+        # Synthesize missing parents
         is_icd9 = "ICD-9" in self.family_name
         is_opcs = "OPCS" in self.family_name
         is_icd10 = "ICD-10" in self.family_name
@@ -356,16 +352,16 @@ class UnifiedGraph:
             # Diagnosis / OPCS (5->4, 4->3)
             c1 = run_synthesis_pass(5, 4)
             c2 = run_synthesis_pass(4, 3)
-            if c1 + c2 > 0: print(f"      👻 Synthesized {c1 + c2} missing Dx parents.")
+            if c1 + c2 > 0: print(f"      Synthesized {c1 + c2} missing Dx parents.")
 
         if is_icd9 and is_proc:
             # Procedures (4->3, 3->2)
             # We need strict 2-digit roots for Proc
             c1 = run_synthesis_pass(4, 3)
             c2 = run_synthesis_pass(3, 2)
-            if c1 + c2 > 0: print(f"      👻 Synthesized {c1 + c2} missing Proc parents.")
+            if c1 + c2 > 0: print(f"      Synthesized {c1 + c2} missing Proc parents.")
 
-        # 1. Root
+        # Root
         self.nodes[root_key] = {
             "code": root_key, "description": self.root_desc, "parent_hint": None,
             "system_id": root_sys_id, "is_selectable": False, "is_leaf": False,
@@ -380,7 +376,7 @@ class UnifiedGraph:
             self.nodes[key]["db_id"] = curr_id
             curr_id += 1
 
-        # 3. Resolve Parents
+        # Resolve parents
         all_keys = list(self.nodes.keys())
 
         for key in sorted_keys:
@@ -388,16 +384,16 @@ class UnifiedGraph:
             hint = normalize_code(node['parent_hint'])
             p_node = None
 
-            # DEBUG: Track what's happening with 1901 in OPCS-3
+            # debug: trace 1901 in OPCS-3
             debug_this = (is_opcs and key in ['1901', '190'])
             if debug_this:
-                print(f"\n🐛 DEBUGGING {self.family_name}: {key}")
+                print(f"\ndebug {self.family_name}: {key}")
                 print(f"   Hint: '{hint}'")
                 print(f"   Key length: {len(key)}, is_digit: {key.isdigit()}")
 
-            # --- 1. Specific Parent Heuristic (IMPROVED) ---
+            # Specific parent
 
-            # A. Try String Slicing FIRST (for numeric codes that should have numeric parents)
+            # Try slicing the code first (numeric codes should have numeric parents)
             if (is_icd9 and is_proc) or is_opcs:
                 if len(key) > 2 and key.isdigit():
                     imp_hint = key[:-1]
@@ -406,22 +402,21 @@ class UnifiedGraph:
                         print(f"   imp_hint in nodes: {imp_hint in self.nodes}")
                     if imp_hint in self.nodes:
                         p_node = self.nodes[imp_hint]
-                        if debug_this: print(f"   ✓ Found via slice: {p_node['code']}")
+                        if debug_this: print(f"   Found via slice: {p_node['code']}")
 
-            # B. Try Explicit Hint (only if slicing didn't work)
+            # then the explicit parent hint
             if not p_node and hint and hint in self.nodes:
                 p_node = self.nodes[hint]
-                if debug_this: print(f"   ✓ Found via hint: {p_node['code']}")
+                if debug_this: print(f"   Found via hint: {p_node['code']}")
 
-            # --- 2. Range Heuristics ---
-            # Only fallback to range if no specific parent found
+            # Otherwise fall back to ranges
 
-            # C1. ICD-10 Super-Block Override
+            # ICD-10 super-block override
             if is_icd10 and "-" in key:
                 super_block = find_icd10_range_parent(key, all_keys)
                 if super_block: p_node = self.nodes[super_block]
 
-            # C2. ICD-9 Range
+            # ICD-9 range
             if not p_node and is_icd9:
                 # If 3-digits (042), looks for 042-044
                 # If 2-digits Proc (60), looks for 60-64
@@ -429,7 +424,7 @@ class UnifiedGraph:
                     r_key = find_icd9_range_parent(key, all_keys, is_proc=is_proc)
                     if r_key and r_key != key: p_node = self.nodes[r_key]
 
-            # D. Chapter Heuristic
+            # Chapter
             if not p_node and key not in ROMAN_MAP:
                 ch = None
                 if is_icd10:
@@ -442,14 +437,14 @@ class UnifiedGraph:
                 if ch and ch in self.nodes and ch != key:
                     p_node = self.nodes[ch]
 
-            # E. Fallback to Root
+            # Fall back to the system root
             if not p_node: p_node = self.nodes[root_key]
             if p_node['db_id'] == node['db_id']: p_node = self.nodes[root_key]
 
             p_node['is_leaf'] = False
             node['parent_db_id'] = p_node['db_id']
 
-        # 4. Selectability
+        # Selectability
         parent_db_ids = set(n['parent_db_id'] for n in self.nodes.values() if n['parent_db_id'])
         for key in sorted_keys:
             node = self.nodes[key]
@@ -465,7 +460,7 @@ class UnifiedGraph:
                     if not node['code'].endswith("*"):
                         node['code'] += "*"
 
-        # 5. Paths (Cycle-Safe)
+        # Paths (cycle-safe)
         id_to_node = {n['db_id']: n for n in self.nodes.values()}
         path_cache = {}
         processing = set()
@@ -510,9 +505,7 @@ class UnifiedGraph:
         }
 
 
-# ==========================================================
-# 2. PARSERS
-# ==========================================================
+# Parsers
 
 def parse_ukbb_tree(file_path):
     if not os.path.exists(file_path): return []
@@ -608,21 +601,21 @@ def parse_cpt_excel(file_path):
     Level 2: CPT Code (Code = CPT Code, Desc = Procedure Desc)
     """
     if not os.path.exists(file_path):
-        print(f"❌ File not found: {file_path}")
+        print(f"File not found: {file_path}")
         return []
 
-    print(f"   ⚙️ Parsing CPT Excel: {file_path}")
+    print(f"   Parsing CPT Excel: {file_path}")
 
     try:
         wb = openpyxl.load_workbook(file_path, data_only=True)
     except Exception as e:
-        print(f"   ❌ Error opening Excel: {e}")
+        print(f"   Error opening Excel: {e}")
         return []
 
     codes_list = []
     seen_categories = set()
 
-    # Helper to handle header scanning
+    # Find the header row
     def get_header_map(worksheet):
         rows = list(worksheet.iter_rows(min_row=1, max_row=20))
         for r_idx, row in enumerate(rows):
@@ -639,10 +632,8 @@ def parse_cpt_excel(file_path):
                 return h_map, r_idx + 1
         return None, None
 
-    # -------------------------------------------------------
-    # PASS 1: Build Map from "Index" Tab
-    # Map: Category ID (Code) -> Operative Procedure (Description)
-    # -------------------------------------------------------
+    # First pass: category map from the "Index" sheet
+    # category code -> operative procedure
     cat_desc_map = {}
 
     if "Index" in wb.sheetnames:
@@ -661,9 +652,7 @@ def parse_cpt_excel(file_path):
                     # Value = "Surgery" (Description)
                     cat_desc_map[str(raw_cat).strip()] = str(raw_desc).strip()
 
-    # -------------------------------------------------------
-    # PASS 2: Codes Tab (Build the Tree)
-    # -------------------------------------------------------
+    # Second pass: build the tree from the "Codes" sheet
     target_tab = "ALL 2024 CPT Codes"
     if target_tab not in wb.sheetnames:
         found = [s for s in wb.sheetnames if "CPT Codes" in s]
@@ -676,7 +665,7 @@ def parse_cpt_excel(file_path):
     code_headers, code_start = get_header_map(ws_codes)
 
     if not code_headers:
-        print("   ❌ CPT Headers not found.")
+        print("   CPT Headers not found.")
         return []
 
     idx_code = code_headers.get("cpt codes")
@@ -687,19 +676,19 @@ def parse_cpt_excel(file_path):
         raw_code = row[idx_code]
         if not raw_code: continue
 
-        # 1. Clean Child Code
+        # Clean the child code
         clean_code = str(raw_code).strip()
         if clean_code.isdigit() and len(clean_code) < 5:
             clean_code = clean_code.zfill(5)
 
-        # 2. Identify Parent (Category)
+        # Parent category
         raw_cat = row[idx_cat]
         clean_cat = str(raw_cat).strip() if raw_cat else "Uncategorized"
         clean_cat_norm = normalize_code(clean_cat)  # This will be the Parent Code
 
-        # 3. Create Parent Node (If new)
+        # Create the parent node if new
         if clean_cat_norm not in seen_categories:
-            # Lookup the Description we mapped in Pass 1
+            # description from the first pass
             parent_desc = cat_desc_map.get(clean_cat, clean_cat)
 
             codes_list.append({
@@ -711,7 +700,7 @@ def parse_cpt_excel(file_path):
             })
             seen_categories.add(clean_cat_norm)
 
-        # 4. Add Child Node
+        # Add the child
         desc = row[idx_desc] if idx_desc is not None else ""
 
         codes_list.append({
@@ -726,9 +715,7 @@ def parse_cpt_excel(file_path):
     return codes_list
 
 
-# ==========================================================
-# SNOMED CT RF2 PARSER
-# ==========================================================
+# SNOMED CT RF2 parser
 
 # SNOMED CT constants
 _SNOMED_ROOT_ID    = "138875005"
@@ -762,8 +749,8 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
     relationships_file= find_file(term_dir, "sct2_Relationship_Snapshot")
     language_file     = find_file(lang_dir, "der2_cRefset_LanguageSnapshot")
 
-    # --- 1. Active concepts ---
-    print(f"   🔬 SNOMED: loading concepts ...")
+    # Active concepts
+    print(f"   SNOMED: loading concepts ...")
     active: set = set()
     with open(concepts_file, encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter="\t"):
@@ -771,8 +758,8 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
                 active.add(row["id"])
     print(f"      -> {len(active):,} active concepts")
 
-    # --- 2. Preferred terms ---
-    print(f"   🔬 SNOMED: loading descriptions ...")
+    # Preferred terms
+    print(f"   SNOMED: loading descriptions ...")
     desc_map: dict = {}
     concept_descs: dict = defaultdict(list)
     with open(descriptions_file, encoding="utf-8") as f:
@@ -805,8 +792,8 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
                 if is_pref: pref_fsn = pref_fsn or clean
         preferred_terms[cid] = pref_syn or pref_fsn or any_syn or any_desc or cid
 
-    # --- 3. IS-A relationships → single primary parent ---
-    print(f"   🔬 SNOMED: loading relationships ...")
+    # IS-A relationships → single primary parent
+    print(f"   SNOMED: loading relationships ...")
     parents_multi: dict = defaultdict(set)
     with open(relationships_file, encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter="\t"):
@@ -818,8 +805,8 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
     primary_parent = {child: min(ps, key=lambda x: int(x)) for child, ps in parents_multi.items()}
     print(f"      -> {len(primary_parent):,} concepts have a parent")
 
-    # --- 4. Assign IDs ---
-    print(f"   🔬 SNOMED: building tree (start_gid={start_gid:,}) ...")
+    # Assign IDs
+    print(f"   SNOMED: building tree (start_gid={start_gid:,}) ...")
     non_root = sorted([c for c in active if c != _SNOMED_ROOT_ID], key=lambda x: preferred_terms.get(x, x).lower())
     concept_to_db_id: dict = {_SNOMED_ROOT_ID: start_gid}
     for i, cid in enumerate(non_root, start=start_gid + 1):
@@ -828,7 +815,7 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
 
     has_children: set = set(primary_parent.values())
 
-    # --- 5. Materialized paths (iterative, cycle-safe) ---
+    # Materialized paths (iterative, cycle-safe)
     path_cache: dict = {_SNOMED_ROOT_ID: f"/{start_gid}/"}
 
     def get_path(cid: str) -> str:
@@ -853,7 +840,7 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
             path_cache[node] = base
         return path_cache[cid]
 
-    # --- 6. Build rows ---
+    # Build rows
     rows = [{
         "id": start_gid, "system_id": system_id,
         "code": "SNOMED-CT",
@@ -879,9 +866,7 @@ def parse_snomed_rf2(snapshot_dir: str, system_id: int, start_gid: int):
     return rows, next_gid
 
 
-# ==========================================================
-# 3. DEBUG
-# ==========================================================
+# Debug
 def print_debug_tree(rows, start_code, depth=3, system_filter=None):
     children_map = {}
     for r in rows:
@@ -892,28 +877,26 @@ def print_debug_tree(rows, start_code, depth=3, system_filter=None):
     matches = [r for r in rows if r['code'] == search or r['code'] == f"{search}*"]
     if system_filter: matches = [r for r in matches if r['system_id'] == system_filter]
 
-    if not matches: print(f"❌ '{search}' not found."); return
+    if not matches: print(f"'{search}' not found."); return
 
     for root in matches:
-        print(f"\n🔎 ROOT: {root['code']} (ID: {root['id']}, Sys: {root['system_id']})")
+        print(f"\nRoot: {root['code']} (ID: {root['id']}, Sys: {root['system_id']})")
 
         def _print(node, d, pre):
             if d > depth: return
             kids = children_map.get(node['id'], [])
             kids.sort(key=lambda x: x['code'])
-            if not kids and d == 1: print(f"   ⚠️ Empty.")
+            if not kids and d == 1: print(f"   (empty)")
             for i, k in enumerate(kids):
                 last = (i == len(kids) - 1)
-                icon = "🟢" if k['is_selectable'] else "📁"
+                icon = "-" if k['is_selectable'] else "+"
                 print(f"{pre}{'└── ' if last else '├── '}{icon} [{k['code']}] {k['description'][:60]}")
                 _print(k, d + 1, pre + ("    " if last else "│   "))
 
         _print(root, 1, "")
 
 
-# ==========================================================
-# 4. RUNNER
-# ==========================================================
+# Runner
 def run_export():
     db_dir = os.path.dirname(__file__)
     base_dir = os.path.join(db_dir, "data")
@@ -927,7 +910,7 @@ def run_export():
         "opcs4": f"{base_dir}/coding240.tsv",
         "icd9proc": f"{base_dir}/CMS32_DESC_LONG_SG.txt",
         "cpt": f"{base_dir}/cpt-pcm-nhsn.xlsx",
-        # SNOMED CT RF2 – auto-discovered under db/data/SnomedCT_*/
+        # SNOMED CT RF2, auto-discovered under db/data/SnomedCT_*/
         "snomed_snapshot": os.path.join(base_dir, next(
             (d for d in os.listdir(base_dir) if d.startswith("SnomedCT_") and os.path.isdir(os.path.join(base_dir, d))),
             "SnomedCT_InternationalRF2"
@@ -939,7 +922,7 @@ def run_export():
     systems = [];
     codes = []
 
-    # --- 1. ICD-10 ---
+    # ICD-10
     g10 = UnifiedGraph("ICD-10 unified", "ICD-10", "Unified ICD-10 codes (WHO, CMS, UK Biobank)")
     s1 = {"id": next_sys, "name": "ICD-10-UKBB", "description": "ICD-10 codes provided through the UK Biobank data dictionary", "version": "Accessed November 2025", "url": "https://biobank.ndph.ox.ac.uk/ukb/coding.cgi?id=19"};
     systems.append(s1)
@@ -956,7 +939,7 @@ def run_export():
     r10, next_gid = g10.finalize_and_export(next_gid)
     codes.extend(r10)
 
-    # --- 2. ICD-9 ---
+    # ICD-9
     g9 = UnifiedGraph("ICD-9 unified", "ICD-9", "Unified ICD-9 codes (CMS, UK Biobank)")
     s4 = {"id": next_sys, "name": "ICD-9-UKBB", "description": "ICD-9 codes provided through the UK Biobank data dictionary", "version": "Accessed November 2025", "url": "https://biobank.ctsu.ox.ac.uk/ukb/coding.cgi?id=87"};
     systems.append(s4)
@@ -970,7 +953,7 @@ def run_export():
     r9, next_gid = g9.finalize_and_export(next_gid)
     codes.extend(r9)
 
-    # --- 3. OPCS-4 ---
+    # OPCS-4
     g_opcs4 = UnifiedGraph("OPCS-4 Unified", "OPCS-4", "OPCS-4 Procedure Codes")
     s6 = {"id": next_sys, "name": "OPCS-4-UKBB", "description": "OPSC4 codes provided through the UK Biobank data dictionary", "version": "Accessed November 2025", "url": "https://biobank.ndph.ox.ac.uk/ukb/coding.cgi?id=240"};
     systems.append(s6)
@@ -979,7 +962,7 @@ def run_export():
     r_opcs4, next_gid = g_opcs4.finalize_and_export(next_gid)
     codes.extend(r_opcs4)
 
-    # --- 4. OPCS-3 ---
+    # OPCS-3
     g_opcs3 = UnifiedGraph("OPCS-3 Unified", "OPCS-3", "OPCS-3 Procedure Codes")
     s7 = {"id": next_sys, "name": "OPCS-3-UKBB", "description": "OPSC4 codes provided through the UK Biobank data dictionary", "version": "Accessed November 2025", "url": "https://biobank.ndph.ox.ac.uk/ukb/coding.cgi?id=259"};
     systems.append(s7)
@@ -988,7 +971,7 @@ def run_export():
     r_opcs3, next_gid = g_opcs3.finalize_and_export(next_gid)
     codes.extend(r_opcs3)
 
-    # --- 5. ICD-9 Proc ---
+    # ICD-9 Proc
     g9p = UnifiedGraph("ICD-9 procedures unified", "ICD-9-Proc", "ICD-9 Procedures Codes")
     s8 = {"id": next_sys, "name": "ICD-9-CM-Proc", "description": "ICD-9 Procedure Codes", "version": "2014 (v32)", "url": "https://www.cms.gov/medicare/coding/icd9providerdiagnosticcodes/downloads/icd-9-cm-v32-master-descriptions.zip"};
     systems.append(s8)
@@ -998,7 +981,7 @@ def run_export():
     r9p, next_gid = g9p.finalize_and_export(next_gid);
     codes.extend(r9p)
 
-    # --- 6. CPT ---
+    # CPT
     g_cpt = UnifiedGraph("CPT-4 Unified", "CPT-4", "Current Procedural Terminology Codes")
     s9 = {"id": next_sys, "name": "CPT-4", "description": "2024 NHSN CPT Operative Procedure Code Mappings (updated 1/2024)", "version": "2024", "url": "https://www.cdc.gov/nhsn/pdfs/validation/2024/opc-cpt-pcm-nhsn.xlsx"};
     systems.append(s9)
@@ -1007,7 +990,7 @@ def run_export():
     r_cpt, next_gid = g_cpt.finalize_and_export(next_gid);
     codes.extend(r_cpt)
 
-    # --- 7. SNOMED CT ---
+    # SNOMED CT
     if os.path.isdir(files["snomed_snapshot"]):
         s10 = {"id": next_sys, "name": "SNOMED-CT", "description": "SNOMED Clinical Terms International Edition", "version": "International 20260301", "url": "https://www.snomed.org/snomed-ct/get-snomed"}
         systems.append(s10)
@@ -1015,9 +998,9 @@ def run_export():
         next_sys += 1
         codes.extend(r_snomed)
     else:
-        print(f"\n⚠️  SNOMED snapshot not found at {files['snomed_snapshot']} – skipping.")
+        print(f"\nwarning: SNOMED snapshot not found at {files['snomed_snapshot']}, skipping.")
 
-    print("\n💾 Saving...")
+    print("\nSaving...")
     codes.sort(key=lambda x: x['id'])
     system_name_lookup = {s['id']: s['name'] for s in systems}
     for row in codes:
@@ -1032,10 +1015,10 @@ def run_export():
         w.writeheader();
         w.writerows(codes)
 
-    print(f"🎉 Done! Created {len(codes)} unified nodes.")
+    print(f"Done. Created {len(codes)} unified nodes.")
 
-    # DEBUG
-    print("\n🔍 CHECKING 59* SERIES (Proc):")
+    # Debug
+    print("\nChecking 59* series (proc):")
     print_debug_tree(codes, start_code="59", depth=2)
 
 

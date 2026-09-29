@@ -3,7 +3,6 @@ import { supabase } from '@/composables/shared/useSupabase.js'
 import { useAuth } from '@/composables/auth/useAuth.js'
 import { useNotifications } from '../shared/useNotifications.js'
 
-// the structure of a project object
 /**
  * @typedef {Object} ProjectMember
  * @property {string} user_id
@@ -38,13 +37,10 @@ const projectForm = reactive({
 
 
 export function useProjects() {
-    // Get dependencies inside the composable function
     const auth = useAuth()
     const { emitError, emitSuccess } = useNotifications()
 
-    // ---------------------------------------
-    // PROJECT DIALOG HANDLERS
-    // ---------------------------------------
+    // Project dialog handlers
     function resetForm() {
         projectForm.name = ''
         projectForm.description = ''
@@ -81,9 +77,7 @@ export function useProjects() {
         showProjectDialog.value = false
     }
 
-    // ---------------------------------------
-    // FETCH PROJECTS
-    // ---------------------------------------
+    // Fetch projects
     async function fetchProjects() {
         if (!auth.user.value) return
 
@@ -104,9 +98,7 @@ export function useProjects() {
 
     }
 
-    // ---------------------------------------
-    // CREATE / UPDATE PROJECT
-    // ---------------------------------------
+    // Create / update project
     async function saveProject(update = false) {
         if (!auth.user.value) {
             emitError('Not Authenticated', 'Please log in to save projects.');
@@ -118,9 +110,7 @@ export function useProjects() {
             return null;
         }
 
-        // ------------------------------------
         // Resolve emails → user_ids
-        // ------------------------------------
         const emailList = projectForm.member_emails || [];
         const idPromises = emailList.map(email => auth.getUserId(email));
         const resolvedIds = await Promise.all(idPromises);
@@ -138,9 +128,7 @@ export function useProjects() {
 
         try {
 
-            // =====================================================
-            // UPDATE PROJECT
-            // =====================================================
+            // Update project
             if (update && currentProject.value) {
                 const projectId = currentProject.value.id;
 
@@ -197,9 +185,7 @@ export function useProjects() {
                 return updated;
             }
 
-            // =====================================================
-            // CREATE PROJECT
-            // =====================================================
+            // Create project
             const ownerId = auth.user.value.id;
             const memberSet = new Set(projectForm.member_ids);
             memberSet.add(ownerId);
@@ -283,7 +269,6 @@ export function useProjects() {
         // console.log("Deleting project:", currentProject.value);
 
         try {
-            // Delete project from DB
             const { error } = await supabase
                 .from('projects')
                 .delete()
@@ -294,7 +279,6 @@ export function useProjects() {
                 return;
             }
 
-            // Clear local state
             projects.value = projects.value.filter(p => p.id !== projectId); // remove just the deleted project
             if (currentProject.value?.id === projectId) {
                 currentProject.value = projects.value[0] || null; // set first project or null

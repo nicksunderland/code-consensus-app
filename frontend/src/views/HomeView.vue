@@ -121,7 +121,7 @@ import Footer from "@/components/Footer.vue";
 </template>
 
 <style scoped>
-/* GENERAL UTILS */
+/* utils */
 .home-container {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #333;
@@ -132,7 +132,7 @@ import Footer from "@/components/Footer.vue";
   color: var(--primary-color, #0EA5E9);
 }
 
-/* HERO SECTION */
+/* hero */
 .hero-section {
   padding: 6rem 2rem;
   text-align: center;
@@ -149,13 +149,11 @@ import Footer from "@/components/Footer.vue";
 }
 
 .hero-subtitle {
-  /* Reduced from 1.25rem to 1.15rem */
   font-size: 1.15rem;
   color: #666;
   max-width: 700px;
   margin: 0 auto 2.5rem auto;
   line-height: 1.6;
-  /* Hero text usually looks better centered, but you can change to justify if preferred */
   text-align: center;
 }
 
@@ -165,7 +163,7 @@ import Footer from "@/components/Footer.vue";
   justify-content: center;
 }
 
-/* FEATURE SECTION */
+/* features */
 .feature-section {
   padding-top: 5rem;
   padding-bottom: 5rem;
@@ -195,7 +193,6 @@ import Footer from "@/components/Footer.vue";
 }
 
 .text-container p {
-  /* Reduced size and justified */
   font-size: 1rem;
   color: #4b5563; /* Softened black */
   line-height: 1.7; /* Increased line-height for readability */
@@ -203,7 +200,7 @@ import Footer from "@/components/Footer.vue";
   text-align: justify; /* Justify text */
 }
 
-/* IMPROVED LIST STYLING */
+/* feature list */
 .feature-list {
   list-style: none;
   padding: 0;
@@ -221,12 +218,12 @@ import Footer from "@/components/Footer.vue";
 }
 
 .feature-list li i {
-  /* Prevent icon squishing */
+  /* stop the icon shrinking */
   flex-shrink: 0;
   margin-top: 4px; /* Optically align icon with first line of text */
 }
 
-/* MINIMALIST FIGURE BOX */
+/* figure */
 .figure-container {
   display: flex;
   justify-content: center;
@@ -283,7 +280,7 @@ import Footer from "@/components/Footer.vue";
   color: #888;
 }
 
-/* INFO CARDS SECTION */
+/* info cards */
 .info-section {
   padding: 5rem 2rem;
   background-color: #f8f9fa;
@@ -311,7 +308,6 @@ import Footer from "@/components/Footer.vue";
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
-/* Card Content Styling */
 :deep(.p-card-content) {
   padding-top: 0;
 }
@@ -340,7 +336,7 @@ import Footer from "@/components/Footer.vue";
   color: var(--primary-color, #0EA5E9);
 }
 
-/* 1. Add a fake URL bar for that extra "App" feel */
+/* fake browser bar above the screenshot */
 .fake-url-bar {
   background: #fff;
   border-radius: 4px;
@@ -354,12 +350,11 @@ import Footer from "@/components/Footer.vue";
   padding-left: 10px;
 }
 
-/* 2. Ensure the box content has no padding so image touches edges */
+/* no padding so the image sits flush */
 .p-0 {
   padding: 0 !important;
 }
 
-/* 3. Style the heatmap image */
 .browser-image {
   width: 100%;
   height: 100%;
@@ -368,19 +363,17 @@ import Footer from "@/components/Footer.vue";
   display: block;
 }
 
-/* --- CARD LOGO UPDATES --- */
 
-/* 4. A wrapper specifically for the Logo (No Blue Background) */
+/* logo wrapper, no blue background */
 .logo-wrapper {
   height: 50px; /* Exact same height as .card-icon-wrapper */
   display: flex;
   align-items: center; /* Vertically center the logo */
   justify-content: flex-start; /* Align left to match title */
   margin-bottom: 1rem;
-  /* Note: We do NOT add the blue background here, keeping it clean */
 }
 
-/* Ensure the titles of all cards line up */
+/* keep card titles aligned */
 :deep(.p-card-title) {
   margin-top: 0;
   font-size: 1.25rem;

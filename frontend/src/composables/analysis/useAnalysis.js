@@ -6,9 +6,7 @@ import { useCodeSelection } from "@/composables/selection/useCodeSelection.js";
 // composables
 
 
-// -----------------------------
-// GLOBAL STATE
-// -----------------------------
+// Global state
 const isAnalysisActive = ref(false); // Default to OFF if accordion is shut - prevent API calls until user opens it
 const selectedMetric = ref('ukb_person_count')  // default metric
 const sliderRange = ref([0, 1]) // The actual handle positions
@@ -84,12 +82,11 @@ const chartOptions = ref({
 function buildHeatmapSeries(results, metric) {
     if (!results.length) return {series: [], xCategories: []}
 
-    // 1. Extract unique X and Y
+    // unique x/y codes
     const allY = [...new Set(results.map(r => r.code_i_str).filter(Boolean))]
     const allX = [...new Set(results.map(r => r.code_j_str).filter(Boolean))]
 
 
-    // 2. Build lookup table
     const lookup = {}
     const descriptions = {}
     results.forEach(r => {
@@ -99,7 +96,6 @@ function buildHeatmapSeries(results, metric) {
         if (r.code_j_str) descriptions[r.code_j_str] = r.code_j_description
     })
 
-    // 3. Build complete heatmap series
     const series = allY.map(yLabel => {
         const row = allX.map(xLabel => {
             const key = `${yLabel}||${xLabel}`
@@ -120,7 +116,7 @@ function buildHeatmapSeries(results, metric) {
                 }
             }
 
-            // Missing cell → fill with placeholder, but include descriptions if available
+            // missing cell: placeholder, but keep the descriptions for the tooltip
             return {
                 x: xLabel,
                 y: 0,
@@ -185,37 +181,31 @@ function buildBarSeries(results, metric) {
     }
 }
 
-// Flag to ensure we don't create duplicate watchers
+// guard so the watcher is only registered once
 let watchersInitialized = false;
 
 export function useAnalysis() {
-    // Get dependencies inside the composable function
     const { emitError, emitSuccess } = useNotifications()
     const { tableRows} = useCodeSelection()
 
-    // ------------------------------------------
-    // HELPER: Apply Bounds to Slider
-    // ------------------------------------------
-    // We call this when API returns OR when Metric changes
+    // set slider bounds, called when the API returns or the metric changes
     const applySliderSettings = (metric) => {
         const bounds = boundsCache.value[metric] || { min: 0, max: 1 }
 
-        // 1. Set Track Limits
         sliderBounds.min = bounds.min
         sliderBounds.max = bounds.max
         const isCountMetric = countMetrics.includes(metric)
         sliderBounds.step = isCountMetric || metric === 'pair_count' ? 1 : (metric === 'jaccard' ? 0.01 : 0.1)
 
-        // 2. Smart Lower Handle Calculation (Min + 50%)
+        // start the lower handle halfway between min and max
         const totalRange = bounds.max - bounds.min
         let lowerHandle = countMetrics.includes(metric)
             ? bounds.min
             : bounds.min + (totalRange * 0.5)
 
-        // Round to nearest step to avoid floating point jitter
+        // round to the step size to avoid float jitter
         lowerHandle = Math.round(lowerHandle / sliderBounds.step) * sliderBounds.step
 
-        // 3. Update the actual v-model
         sliderRange.value = [lowerHandle, bounds.max]
     }
 
@@ -231,10 +221,8 @@ export function useAnalysis() {
                 code_ids: ids,
                 dataset: 'ukb'
             })
-            // Save both to cache
             boundsCache.value = data
 
-            // Apply the currently selected metric immediately
             applySliderSettings(selectedMetric.value)
 
         } catch (e) {
@@ -287,9 +275,7 @@ export function useAnalysis() {
         }
     }
 
-    // ------------------------------------------------------
-    // SINGLETON WATCHER
-    // ------------------------------------------------------
+    // Singleton watcher
     if (!watchersInitialized) {
         watch(
             [

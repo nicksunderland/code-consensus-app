@@ -8,7 +8,7 @@ import FloatLabel from "primevue/floatlabel";
 import {ref} from "vue";
 import {useConfirm} from "primevue/useconfirm";
 
-// --- use composable ---
+// use composable
 const {
   currentProject,
   showProjectDialog,

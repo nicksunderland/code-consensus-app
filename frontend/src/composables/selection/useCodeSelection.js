@@ -22,17 +22,12 @@ const {
     importedData
 } = useCodeImport()
 
-// ---------------------------------------------
-// GLOBAL STATE
-// ---------------------------------------------
+// Global state
 const lastSavedSelectionHash = ref('');
 const lastSavedConsensusHash = ref('');
-/**
- * Creates a unique string fingerprint of the current USER SELECTIONS.
- * Only includes fields that affect the 'Save Selections' operation.
- */
+// fingerprint of the user's selections, used to detect unsaved changes
 const getSelectionHash = () => {
-    // Sort to ensure order doesn't affect hash
+    // sorted so order doesn't matter
     const simplified = tableRows.value
         .map(r => ({
             k: r.key,
@@ -43,10 +38,7 @@ const getSelectionHash = () => {
     return JSON.stringify(simplified);
 };
 
-/**
- * Creates a unique string fingerprint of the current CONSENSUS.
- * Only includes fields that affect the 'Save Consensus' operation.
- */
+// same again for the consensus fields
 const getConsensusHash = () => {
     const simplified = tableRows.value
         .filter(r => r.consensus_selected) // Only selected rows matter for consensus upsert
@@ -59,7 +51,7 @@ const getConsensusHash = () => {
     return JSON.stringify(simplified);
 };
 
-// Computed flags for UI
+// UI flags
 const hasUnsavedChanges = computed(() => {
     return getSelectionHash() !== lastSavedSelectionHash.value;
 });
@@ -71,11 +63,10 @@ const hasUnsavedConsensusChanges = computed(() => {
 const userComments = ref({});
 const consensusState = ref({}); // { [codeId]: { selected: boolean, comment: string } }
 const tableRows = computed(() => {
-    // Use a Map to ensure unique rows by Key (Code ID)
+    // keyed by code id so each code appears once
     const rowsMap = new Map();
 
-    // 1. WALK THE TREE
-    // Add nodes that are Selected OR Found in search
+    // walk the tree, keeping nodes that are selected or were found by the search
     function walk(nodeArray) {
         if (!Array.isArray(nodeArray)) return;
 
@@ -87,7 +78,6 @@ const tableRows = computed(() => {
             if (selected || found) {
                 const consensusData = consensusState.value[key] || { selected: false, comment: '' }; // defaults
                 const codeComment = userComments.value[key] || ''; // default
-                // add or update the row
                 rowsMap.set(key, {
                     key: key,
                     selected: selected,
@@ -102,14 +92,12 @@ const tableRows = computed(() => {
                     system_id: node.data.system_id // nodes are well-defined to have these fields
                 });
             }
-            // recurse children if present
             if (node.children?.length) walk(node.children);
         });
     }
     walk(nodes.value);
 
-    // 2. MERGE IMPORTED DATA
-    // Iterate imported data to either Add new rows or Update existing ones
+    // then merge in imported codes
     if (importedData.value && Array.isArray(importedData.value)) {
         importedData.value.forEach(item => {
             const key = String(item.key);
@@ -119,11 +107,11 @@ const tableRows = computed(() => {
             const codeComment = userComments.value[key] || ''; // default
 
             if (rowsMap.has(key)) {
-                // CASE A: Row exists from Tree Walk, i.e. we imported a mapped code (not orphan) -> Just update imported flag
+                // already in the tree, i.e. an imported code that mapped to a real code, so just flag it
                 const existingRow = rowsMap.get(key);
                 existingRow.imported = true;
             } else {
-                // Add new row from import (these are orphan/unmapped codes)
+                // otherwise it's an orphan (unmapped) code
                 rowsMap.set(key, {
                     ...item,
                     key,
@@ -146,19 +134,14 @@ const tableRows = computed(() => {
     const projectMembers = ref([]); // List of users found in the dataset
 let watchersInitialized = false;
 
-// ---------------------------------------------
-// COMPOSABLE
-// ---------------------------------------------
+// Composable
 export function useCodeSelection() {
-    // Get dependencies inside the composable function
     const { emitError, emitSuccess } = useNotifications()
     const { user } = useAuth()
     const { currentPhenotype } = usePhenotypes()
     const { resetDownloadCache } = useDownload()
 
-    // ------------------------------------------------------------
-    // HELPERS
-    // ------------------------------------------------------------
+    // Helpers
     const updateComment = (key, text) => {
         userComments.value[key] = text;
     };
@@ -201,8 +184,7 @@ export function useCodeSelection() {
     const isAllSelected = computed(() => selectionState.value === 'all');
 
     const toggleSelectAll = () => {
-        // If we are currently 'all' -> Deselect All
-        // If we are 'none' or 'partial' -> Select All
+        // all -> none, otherwise select all
         const shouldSelectAll = selectionState.value !== 'all';
 
         const newKeys = { ...selectedNodeKeys.value };
@@ -229,11 +211,8 @@ export function useCodeSelection() {
         lastSavedConsensusHash.value = '';
     }
 
-    // ------------------------------------------------------------
-    // SAVE/LOAD LOGIC
-    // ------------------------------------------------------------
+    // Save/load logic
     const saveSelections = async () => {
-        // 1. Validation
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
         if (!userId) {
@@ -312,7 +291,7 @@ export function useCodeSelection() {
         }
     };
 
-    // (The Skeleton): This builds the Table Rows.
+    // builds the table rows
     const fetchUserSelections = async () => {
         const phenotypeId = currentPhenotype.value?.id;
         const userId = user.value?.id;
@@ -405,7 +384,7 @@ export function useCodeSelection() {
         }, 0);
     };
 
-    // (The Decoration): This provides the Status/Icons inside the rows fetched by fetchUserSelections
+    // team selections, used for the per-rater status icons in each row
     const fetchTeamSelections = async () => {
         const phenotypeId = currentPhenotype.value?.id;
         if (!phenotypeId) return;
@@ -426,7 +405,6 @@ export function useCodeSelection() {
 
             if (error) throw error;
 
-            // TRANSFORM LOGIC
             const map = {};
             const membersSet = new Map();
 
@@ -435,12 +413,11 @@ export function useCodeSelection() {
                 const uId = row.user_id;
                 const email = row.email?.email || 'Unknown';
 
-                // Add to Member List (for Column Headers)
+                // member list for the column headers
                 if (!membersSet.has(uId)) {
                     membersSet.set(uId, { id: uId, name: email });
                 }
 
-                // Add to Data Map
                 if (!map[cId]) map[cId] = {};
                 map[cId][uId] = {
                     selected: row.is_selected,
@@ -458,23 +435,18 @@ export function useCodeSelection() {
 
     };
 
-    // Helper to get data for the table cell
+    // everything the table cell needs for one rater/code
     const getTeamMemberStatus = (codeId, userId) => {
-        // 1. Get Raw Data (or Default)
         const status = teamSelections.value[codeId]?.[userId] || { selected: false, comment: '' };
 
-        // 2. Compute Tooltip
         const tooltip = (status.comment && status.comment.trim() !== '')
             ? status.comment
             : null;
 
-        // 3. Compute Visuals (Icon & Color)
-        // This replaces your 'getReviewIcon' function too!
         const visual = status.selected
             ? { icon: 'pi pi-check-circle', color: '#10B981' }
             : { icon: 'pi pi-times-circle', color: 'rgba(255,2,2,0.7)' };
 
-        // 4. Return One "View Model" Object
         return {
             selected: status.selected,
             comment:  status.comment, // Raw comment (for boolean checks)
@@ -488,7 +460,7 @@ export function useCodeSelection() {
         const userId = user.value?.id;
         const codeMap = new Map();
 
-        // Seed with team selections from the database
+        // team selections from the db
         Object.entries(teamSelections.value || {}).forEach(([codeId, userMap]) => {
             const entry = codeMap.get(codeId) || {};
             Object.entries(userMap || {}).forEach(([uid, details]) => {
@@ -497,7 +469,7 @@ export function useCodeSelection() {
             codeMap.set(codeId, entry);
         });
 
-        // Overlay current user's live selections so the bar updates immediately
+        // overlay the current user's unsaved selections so the bar updates live
         if (userId) {
             tableRows.value.forEach(row => {
                 const entry = codeMap.get(row.key) || {};
@@ -542,10 +514,16 @@ export function useCodeSelection() {
         const phenotypeId = currentPhenotype.value?.id;
         if (!phenotypeId) return;
 
-        const { data, error } = await supabase
-            .from('user_code_selections')
-            .select('code_type, code_id, orphan_id, consensus_comments, is_consensus')
-            .eq('phenotype_id', phenotypeId);
+        const [{ data, error }, { data: pheno }] = await Promise.all([
+            supabase
+                .from('user_code_selections')
+                .select('code_type, code_id, orphan_id, consensus_comments, is_consensus')
+                .eq('phenotype_id', phenotypeId),
+            supabase
+                .from('phenotypes')
+                .select('finalized_at')
+                .eq('id', phenotypeId)
+        ]);
 
         if (error) {
             emitError("Error loading consensus", error.message);
@@ -562,7 +540,7 @@ export function useCodeSelection() {
             };
         });
         consensusState.value = map;
-        isFinalized.value = false;
+        isFinalized.value = !!pheno?.[0]?.finalized_at;
 
         setTimeout(() => {
             lastSavedConsensusHash.value = getConsensusHash();
@@ -662,7 +640,7 @@ export function useCodeSelection() {
             );
             lastSavedConsensusHash.value = getConsensusHash();
 
-            isFinalized.value = finalize;
+            if (finalize) await setFinalized(phenotypeId, true);
 
             const action = finalize ? "Finalized" : "Saved";
             emitSuccess(action, `${action} consensus for ${finalRows.length} codes.`);
@@ -768,15 +746,32 @@ export function useCodeSelection() {
         }
     };
 
-    // ------------------------------------------------------------
-    // UNLOCK (Revert to Draft)
-    // ------------------------------------------------------------
+    // finalised state lives on the phenotype row so it survives reloads and is shared
+    const setFinalized = async (phenotypeId, finalize) => {
+        const { error } = await supabase
+            .from('phenotypes')
+            .update({
+                finalized_at: finalize ? new Date().toISOString() : null,
+                finalized_by: finalize ? (user.value?.id ?? null) : null
+            })
+            .eq('id', phenotypeId);
+        if (error) throw error;
+        isFinalized.value = finalize;
+    };
+
+    // unlock, i.e. back to draft
     const unlockConsensus = async () => {
         const phenotypeId = currentPhenotype.value?.id;
         if (!phenotypeId) return;
 
-        isFinalized.value = false;
-        emitSuccess("Unlocked", "Consensus codes are now editable.");
+        try {
+            await setFinalized(phenotypeId, false);
+            await resetDownloadCache(phenotypeId);
+            emitSuccess("Unlocked", "Consensus codes are now editable.");
+        } catch (err) {
+            console.error(err);
+            emitError("Unlock Failed", "Could not unlock the consensus.");
+        }
     }
 
     const rehydrateCurrentPhenotype = async () => {
@@ -791,13 +786,10 @@ export function useCodeSelection() {
         }
     };
 
-    // ------------------------------------------------------------
-    // COMPOSABLE WATCHERS
-    // ------------------------------------------------------------
+    // Composable watchers
     if (!watchersInitialized) {
         watch(isReviewMode, async (newValue) => {
           if (newValue) {
-              // Parallel Fetch: Get Team data AND Current Consensus data
               await Promise.all([
                   fetchTeamSelections(),
                   fetchConsensus()
@@ -808,17 +800,14 @@ export function useCodeSelection() {
         watch(
             () => currentPhenotype.value?.id,
             async (newId) => {
-                // A. ALWAYS RESET FIRST
+                // always reset first
                 clearTreeState();
                 importedData.value = [];
                 clearSelectionState();
 
-                // B. IF NEW ID EXISTS, LOAD NEW DATA
                 if (newId) {
                     try {
-                        // Load Search Strategy for this new phenotype
                         await fetchSearchStrategy(newId);
-                        // Load Selections
                         await fetchUserSelections();
                         await fetchConsensus();
                     } catch (e) {
@@ -832,9 +821,7 @@ export function useCodeSelection() {
         watchersInitialized = true;
     }
 
-    // ------------------------------------------------------------
-    // EXPORT
-    // ------------------------------------------------------------
+    // Export
     return {
         // state
         isSaving,

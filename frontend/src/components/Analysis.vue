@@ -13,7 +13,6 @@ import {useCodeSelection} from "@/composables/selection/useCodeSelection.js";
 import Tooltip from 'primevue/tooltip';
 import Popover from 'primevue/popover';
 
-// Destructure composable to get auto-unwrapped refs
 const {
   isAnalysisActive,
   selectedMetric,

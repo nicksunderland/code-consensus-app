@@ -1,20 +1,21 @@
 ## Code Consensus
 
-[![CI](https://img.shields.io/badge/tests-vitest-green)](./frontend/package.json) [![API](https://img.shields.io/badge/backend-fastapi-blue)](./backend/main.py) ![License](https://img.shields.io/badge/license-%C2%A9%20HERMES-lightgrey)  
-[![Made with Supabase](https://supabase.com/badge-made-with-supabase.svg)](https://supabase.com)    
-<br/>
-<strong>Author:</strong> Nicholas Sunderland (nicholas.sunderland@bristol.ac.uk)
+Tool for building EHR code lists for phenotypes as a team. Each member of a project searches the code hierarchies (ICD-9/10, OPCS, CPT, SNOMED CT) and picks codes independently, then the group agrees a consensus list and exports it. UK Biobank co-occurrence and counts are shown alongside to help spot missing or noisy codes.
 
-<strong>Toolkit:</strong> Vue + PrimeVue frontend (Netlify) and FastAPI backend (Fly.io) with Supabase auth/DB.
+Nicholas Sunderland (nicholas.sunderland@bristol.ac.uk), HERMES. © HERMES.
+
+[![Made with Supabase](https://supabase.com/badge-made-with-supabase.svg)](https://supabase.com)
 
 ### Structure
-- `frontend/`: Vue 3 + Vite app (PrimeVue UI). Routes: `/` home, `/accordion` consensus tool, `/examples` gallery, `/terms` legal, `/flow` flow view.
-- `backend/`: FastAPI API, Supabase DB access, seed/utility scripts (`db/`). Example endpoint `/api/example-phenotypes`.
-- `backend/db/schema.sql`: Supabase schema (phenotypes, selections, consensus, codes).
-- `backend/db/ukb_cooccurrence.py`: Generates co-occurrence metrics (jaccard/lift/counts) CSV for import.
+- `frontend/` Vue 3 + Vite + PrimeVue, on Netlify. Routes: `/` home, `/accordion` consensus tool, `/flow` PhenoFlow, `/examples`, `/docs`, `/terms`.
+- `backend/main.py` FastAPI, on Fly.io. Tree browsing, code search, co-occurrence/count metrics and the public examples endpoints.
+- `backend/db/schema.sql` Supabase schema (codes, projects, phenotypes, selections, consensus, RLS).
+- `backend/db/` data loading and project seeding scripts (below).
 
-### Quickstart
-Backend (FastAPI):
+Most CRUD goes straight from the frontend to Supabase under RLS. The backend uses the service-role connection for the heavy read-only queries.
+
+### Running locally
+Backend:
 ```bash
 cd backend
 python -m venv venv && source venv/bin/activate
@@ -22,7 +23,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Frontend (Vue):
+Frontend:
 ```bash
 cd frontend
 npm install
@@ -30,31 +31,34 @@ npm run dev
 ```
 
 ### Environment
-Create `.env` files:
-- `backend/.env`: `DATABASE_URL=...`, `EXAMPLE_PROJECT_IDS=uuid1,uuid2`, `ORIGIN=http://localhost:5173`, etc.
-- `frontend/.env`: `VITE_API_URL=http://localhost:8000`, `VITE_SUPABASE_URL=...`, `VITE_SUPABASE_ANON_KEY=...`.
+- `backend/.env`: `VITE_DATABASE_URL` (service-role Postgres URL), `ORIGIN` (CORS, comma separated), `EXAMPLE_PROJECT_IDS=uuid1,uuid2`, `HES` (path to the UKB HES extract, only for the co-occurrence script).
+- `frontend/.env`: `VITE_API_URL=http://localhost:8000`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 
-### Supabase auth setup (short)
-1) In Supabase: enable GitHub/Google providers; set Site URL `http://localhost:5173` (and production URL), redirect URLs include both local and production.  
-2) Copy `project.supabase.co` URL and anon key into `frontend/.env`.  
-3) Backend uses `DATABASE_URL` (service role) and `EXAMPLE_PROJECT_IDS` for public examples.  
-4) RLS: ensure read-only policies for vocab tables; project/phenotype/selection policies already in `schema.sql`.
+### Supabase auth
+1. Enable the GitHub/Google providers. Set the Site URL to `http://localhost:5173` (and the production URL) and add both as redirect URLs.
+2. Put the project URL and anon key in `frontend/.env`.
+3. The backend connects with the service role, so anything it exposes publicly is limited to `EXAMPLE_PROJECT_IDS`.
+4. Vocab tables need read-only RLS policies; project/phenotype/selection policies are in `schema.sql`.
 
-### Seeding data
-From `backend/db`:
-- Seed test data: `python seed_db_testing.py`
-- Seed production sample: `python seed_db.py`
-- Generate co-occurrence CSV: `python ukb_cooccurrence.py` (reads `backend/.env`, outputs `~/Downloads/cooccurrence_web_summary.csv`)
-Import CSV into `code_cooccurrence` (ordered pairs enforced).
+New users get a `user_profiles` row on signup. People have to sign up before they can be added to a project.
+
+### Data
+Raw vocab files live in `backend/db/data/` (gitignored). From `backend/`:
+- `python db/seed_db.py` builds `codes.csv` / `code_systems.csv` from the UKB codings, WHO and CM ICD-10, CMS ICD-9, CPT and the SNOMED RF2 snapshot.
+- `python db/ukb_cooccurrence.py` writes `cooccurrence_web_summary.csv` and `code_counts_web.csv` to `db/data/` for import into `code_cooccurrence` / `code_counts` (pairs are stored ordered, `code_i < code_j`).
+
+Project seeding (writes to the live DB):
+- `python db/seed_esc_project.py` ESC data elements, then `python db/seed_esc_selections.py` to pre-fill selections from the search terms.
+- `python db/seed_biccs_project.py` BICCS inherited cardiac conditions list. Dry run by default, `--commit` to write.
 
 ### Deploy
-- **Frontend (Netlify)**: set env vars (`VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`); build command `npm run build`, publish `frontend/dist`.
-- **Backend (Fly.io)**: set `VITE_DATABASE_URL`, `EXAMPLE_PROJECT_IDS`, CORS `ORIGIN`; run `fly deploy` from `backend/`.
+- Frontend (Netlify): set `VITE_API_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`; build `npm run build`, publish `frontend/dist`.
+- Backend (Fly.io): set `VITE_DATABASE_URL`, `EXAMPLE_PROJECT_IDS`, `ORIGIN`; `fly deploy` from `backend/`.
 
 ### Tests
-- Frontend: `cd frontend && npm test` (Vitest).
-- Backend: `cd backend && python -m unittest discover -s tests`.
+- Frontend: `cd frontend && npm test`
+- Backend: `cd backend && python -m unittest discover -s tests`
 
 ### Notes
-- Do not store PHI/PII in free-text fields; code selections should reference vocab only.
-- Counts metric suppresses low numbers (<100). Service role bypasses RLS; public exposure should use curated endpoints only.
+- No PHI/PII in free-text fields. Selections reference vocab codes only.
+- Counts under 100 are suppressed, per UKB guidance on small numbers.

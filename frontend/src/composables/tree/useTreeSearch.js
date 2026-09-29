@@ -6,9 +6,7 @@ import { usePhenotypes } from "@/composables/project/usePhenotypes.js";
 import {useCodeSystems} from "@/composables/shared/useCodeSystems.js";
 
 
-// ---------------------------------------------
-// GLOBAL STATE
-// ---------------------------------------------
+// Global state
 const nodes = ref([])
 const selectedNodeKeys = ref({})
 const searchNodeKeys = ref({})
@@ -21,21 +19,16 @@ const searchInOptions = [
 ]
 const searchInputs = ref([])
 
-// ---------------------------------------------
-// COMPOSABLE
-// ---------------------------------------------
+// Composable
 export function useTreeSearch() {
-    // Get dependencies inside the composable function
     const { emitError, emitSuccess } = useNotifications()
 
-    // get and generate the code systems options for the UI
+    // code system options for the dropdowns
     const { codeSystems, loadCodeSystems } = useCodeSystems()
 
 
 
-    // ------------------------------------------------------------
-    // UTILS
-    // ------------------------------------------------------------
+    // Utils
     function clearSearchFlags(nodesArr) {
 
         if (!Array.isArray(nodesArr)) return
@@ -61,9 +54,7 @@ export function useTreeSearch() {
         searchInputs.value = [makeSearchInput()]
     }
 
-    // ------------------------------------------------------------
-    // SEARCH INPUTS
-    // ------------------------------------------------------------
+    // Search inputs
     loadCodeSystems().catch(err => { console.error("Failed to load code systems:", err) })
     const searchSystemsOptions = computed(() => {
         return codeSystems.value.map(sys => ({
@@ -117,11 +108,10 @@ export function useTreeSearch() {
         nodesArr.sort((a, b) => {
             const valA = a.data?.code || a.label || "";
             const valB = b.data?.code || b.label || "";
-            // Numeric: true handles "A1, A2, A10" correctly instead of "A1, A10, A2"
+            // numeric so A2 sorts before A10
             return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
         });
 
-        // Recursively sort children
         nodesArr.forEach(node => {
             if (node.children && node.children.length > 0) {
                 sortTreeNodes(node.children);
@@ -129,14 +119,11 @@ export function useTreeSearch() {
         });
     }
 
-    // ------------------------------------------------------------
-    // SAVE / RELOAD SEARCH
-    // ------------------------------------------------------------
+    // Save / reload search
     const saveSearchStrategy = async (phenotypeId) => {
         if (!phenotypeId) return;
 
-        // 1. Prepare Payload
-        // Map your UI 'searchInputs' to the DB columns
+        // searchInputs -> phenotype_search_terms rows
         const payload = searchInputs.value.map((input, index) => ({
             phenotype_id: phenotypeId,
             term: input.text,
@@ -146,8 +133,7 @@ export function useTreeSearch() {
             row_order: index
         }));
 
-        // 2. Sync (Delete Old -> Insert New)
-        // A. Delete existing strategy for this phenotype
+        // replace the saved search: delete then insert
         const { error: delError } = await supabase
             .from('phenotype_search_terms')
             .delete()
@@ -158,7 +144,6 @@ export function useTreeSearch() {
             return;
         }
 
-        // B. Insert new strategy (if any exist)
         if (payload.length > 0) {
             const { error: insError } = await supabase
                 .from('phenotype_search_terms')
@@ -183,7 +168,7 @@ export function useTreeSearch() {
         }
 
         if (data && data.length > 0) {
-            // Map DB rows back to your UI object structure
+            // rows -> searchInputs
             searchInputs.value = data.map(row => ({
                 text: row.term,
                 regex: row.is_regex,
@@ -192,14 +177,12 @@ export function useTreeSearch() {
                 // ai_enhanced: row.is_ai_enhanced (future)
             }));
         } else {
-            // Default to one empty input if nothing saved
+            // one empty input if nothing saved
             searchInputs.value = [makeSearchInput()];
         }
     };
 
-    // ------------------------------------------------------------
-    // API: LAZY LOAD CHILDREN
-    // ------------------------------------------------------------
+    // lazy load children
     const onNodeExpand = async (node) => {
 
         const isRoot = !node;
@@ -230,7 +213,6 @@ export function useTreeSearch() {
                     // console.log('Node after assigning children:', node);
                 }
 
-                // Ensure loaded children are sorted immediately
                 sortTreeNodes(isRoot ? nodes.value : node.children);
 
             } catch (err) {
@@ -243,14 +225,12 @@ export function useTreeSearch() {
         // console.log("The nodes value", nodes.value)
     };
 
-    // ------------------------------------------------------------
-    // API: RESTORE SPECIFIC NODES (Hydration)
-    // ------------------------------------------------------------
+    // Rebuild the tree down to specific saved nodes
     const fetchSpecificNodes = async (ids, inject = {}) => {
         if (!ids || ids.length === 0) return;
 
         try {
-            // STEP 1: Fetch the requested nodes first to get their paths
+            // get the nodes first for their paths
             const { data: targetNodes, error: targetError } = await supabase
                 .from('codes')
                 .select('id, materialized_path')
@@ -258,19 +238,16 @@ export function useTreeSearch() {
 
             if (targetError) throw targetError;
 
-            // STEP 2: Collect ALL IDs needed (Targets + Ancestors)
+            // then every id on those paths
             const allIdsToFetch = new Set();
             targetNodes.forEach(node => {
-                // Add the node itself
                 allIdsToFetch.add(String(node.id));
-                // Parse path "1/5/12" -> Add 1, 5, 12
                 if (node.materialized_path) {
                     const pathIds = node.materialized_path.split('/').filter(Boolean);
                     pathIds.forEach(pId => allIdsToFetch.add(pId));
                 }
             });
 
-            // STEP 3: Fetch details for EVERYONE in the chain
             const { data: fullData, error: fullError } = await supabase
                 .from('codes')
                 .select(`
@@ -279,14 +256,11 @@ export function useTreeSearch() {
                 `)
                 .in('id', Array.from(allIdsToFetch));
 
-            // STEP 4: Format & inject
             const fullResults = fullData.map(row => {
-                // Flatten the system object into a string
-                // If row.system is { name: "ICD-10" }, this grabs just "ICD-10"
+                // row.system is { name: "ICD-10" }, flatten to the name
                 const systemName = row.system?.name || '';
                 const nodeId = String(row.id);
 
-                // Check if we have extra data to inject for this specific ID
                 const extraData = inject[nodeId] || {};
 
                 return {
@@ -300,9 +274,7 @@ export function useTreeSearch() {
                 };
             });
 
-            // STEP 5: Merge
-            // We pass an empty ancestor_map because we manually fetched all the ancestors
-            // and included them in 'results', so the merger will find them naturally.
+            // ancestors are already in the results, so no ancestor_map needed
             mergeSearchNodesIntoTree({
                 results: fullResults,
                 ancestor_map: {},
@@ -314,9 +286,7 @@ export function useTreeSearch() {
         }
     };
 
-    // ------------------------------------------------------------
-    // LOGIC: MERGE NODES INTO TREE
-    // ------------------------------------------------------------
+    // merge nodes into the tree
     function mergeSearchNodesIntoTree({ results, ancestor_map, clearPrevious = false }) {
         // console.log("=== mergeSearchNodesIntoTree ===");
         // console.log("Results array length:", results.length);
@@ -326,7 +296,6 @@ export function useTreeSearch() {
             searchNodeKeys.value = {};
         }
 
-        // Update global index based on incoming results
         results.forEach(r => {
             if (r.data?.found_in_search) {
                 searchNodeKeys.value[r.key] = true;
@@ -362,14 +331,14 @@ export function useTreeSearch() {
                     currentLevel.push(node);
 
                 } else {
-                    // If node exists, we MUST re-apply the flag if it was found again
+                    // already in the tree, re-apply the flag if it was found again
                     if (result.data?.found_in_search && id === String(result.key)) {
                         if (!node.data) node.data = {};
                         node.data.found_in_search = true;
                     }
                 }
 
-                // Mark ancestors as expanded
+                // expand ancestors
                 if (index < pathIds.length - 1) {
                     expandedNodeKeys.value[id] = true;
                 }
@@ -378,13 +347,10 @@ export function useTreeSearch() {
             });
         });
 
-        // Finally, sort the entire tree after merging
         sortTreeNodes(nodes.value);
     }
 
-    // ------------------------------------------------------------
-    // API: RUN SEARCH
-    // ------------------------------------------------------------
+    // run search
     async function runSearch() {
         const payload = {
             searches: searchInputs.value
@@ -406,7 +372,7 @@ export function useTreeSearch() {
         try {
             const res = await apiClient.post('/api/search-nodes', payload)
 
-            // Inject found_in_search: true here, so merge logic is identical to hydration
+            // set found_in_search here so the merge is the same as for hydration
             const preparedResults = res.data.results.map(r => ({
                 ...r,
                 data: {
@@ -421,7 +387,7 @@ export function useTreeSearch() {
                 clearPrevious: true
             })
 
-            // --- AUTO SELECT RESULTS ---
+            // auto-select the hits
             if (autoSelect.value) {
                 const nextSelection = { ...selectedNodeKeys.value }
                 preparedResults.forEach(r => {
@@ -438,9 +404,7 @@ export function useTreeSearch() {
 
     }
 
-    // ------------------------------------------------------------
-    // EXPORT
-    // ------------------------------------------------------------
+    // Export
     return {
         // tree
         nodes,

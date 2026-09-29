@@ -2,20 +2,20 @@ import { ref, computed, watch } from 'vue'
 import {useCodeSystems} from "@/composables/shared/useCodeSystems.js";
 import {supabase} from "@/composables/shared/useSupabase.js";
 
-// --- GLOBAL STATE (Singleton) ---
+// module-level state, shared by every caller
 const showImportDialog = ref(false)
 const importedData = ref([])
 
-// --- CONSTANTS ---
+// Constants
 
 
 
 export function useCodeImport() {
     const { codeSystems, loadCodeSystems } = useCodeSystems()
-    // Ensure code systems are loaded even when invoked outside a component context
+    // code systems may not be loaded yet if called outside a component
     loadCodeSystems().catch(err => console.error("Failed to load code systems", err))
 
-    // --- LOCAL STATE ---
+    // Local state
     const step = ref(1)
     const fileName = ref('')
     const useFileProvidedSystem = ref({})
@@ -32,7 +32,7 @@ export function useCodeImport() {
     const unmatchedSystems = ref([])
     const rawImportedData = ref([])
 
-    // --- COMPUTED PROPERTIES ---
+    // Computed properties
     const previewData = computed(() => {
         if (rawImportedData.value.length === 0) return []
         return rawImportedData.value.slice(0, 10)
@@ -55,7 +55,7 @@ export function useCodeImport() {
             const isMapped = !!systemMapping.value[sys]
             const isFileOverride = !!useFileProvidedSystem.value[sys]
 
-            // It is "remaining" (unresolved) only if it is NEITHER mapped NOR overridden
+            // still unresolved if neither mapped nor overridden
             return !isMapped && !isFileOverride
         }).length
     })
@@ -77,8 +77,8 @@ export function useCodeImport() {
         return columnMapping.value.code && validationErrors.value.length === 0
     })
 
-    // --- HELPER FUNCTIONS (Internal) ---
-    // 1. CSV Parsing Logic
+    // internal
+    // CSV
     const detectDelimiter = (line) => {
         const delimiters = [',', '\t', ';', '|']
         let maxCount = 0
@@ -110,7 +110,6 @@ export function useCodeImport() {
                     const firstLine = lines[0]
                     const delimiter = detectDelimiter(firstLine)
 
-                    // Remove quotes and trim
                     const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''))
                     availableColumns.value = headers
 
@@ -134,27 +133,24 @@ export function useCodeImport() {
         })
     }
 
-    // 2. Excel Parsing Logic
+    // Excel
     const parseExcel = async (file) => {
         try {
-            // Dynamically import xlsx to keep bundle size small
+            // lazy import, xlsx is large
             const XLSX = await import('xlsx')
 
-            // Read file as ArrayBuffer
             const data = await file.arrayBuffer()
 
-            // Parse workbook
             const workbook = XLSX.read(data, { type: 'array' })
 
-            // Get first sheet name
+            // first sheet only
             const firstSheetName = workbook.SheetNames[0]
             if (!firstSheetName) throw new Error('Excel file has no sheets')
 
             const worksheet = workbook.Sheets[firstSheetName]
 
-            // Convert to JSON
-            // raw: false ensures all data is treated as text (avoids date parsing issues)
-            // defval: '' ensures empty cells are empty strings, not undefined
+            // raw: false keeps everything as text (codes like 1E10 otherwise become dates/numbers)
+            // defval: '' so empty cells aren't undefined
             const jsonData = XLSX.utils.sheet_to_json(worksheet, {
                 raw: false,
                 defval: ''
@@ -162,7 +158,6 @@ export function useCodeImport() {
 
             if (jsonData.length === 0) throw new Error('Sheet appears to be empty')
 
-            // Extract headers from the keys of the first row
             const headers = Object.keys(jsonData[0])
 
             availableColumns.value = headers
@@ -213,19 +208,18 @@ export function useCodeImport() {
         })
 
         const currentFlags = { ...useFileProvidedSystem.value }
-        // 2. Ensure every unmatched system has a key initialized to false (if not already set)
+        // default every unmatched system to false
         foundUnmatched.forEach(sys => {
             if (currentFlags[sys] === undefined) {
                 currentFlags[sys] = false
             }
         })
 
-        // 3. Update the refs
         useFileProvidedSystem.value = currentFlags
         unmatchedSystems.value = foundUnmatched
     }
 
-    // --- PUBLIC ACTIONS ---
+    // Public actions
     const openImportDialog = () => {
         showImportDialog.value = true
     }
@@ -248,7 +242,7 @@ export function useCodeImport() {
         closeImportDialog()
     }
 
-    // Main entry point for parsing
+    // entry point
     const parseFile = async (file) => {
         const extension = file.name.split('.').pop().toLowerCase()
         fileName.value = file.name
@@ -280,7 +274,6 @@ export function useCodeImport() {
         isImporting.value = true
 
         try {
-            // Build a lookup of DB code systems
             const systemMap = {}
             codeSystems.value.forEach(s => {
                 systemMap[s.name.toLowerCase()] = s
@@ -295,22 +288,19 @@ export function useCodeImport() {
 
                 let systemName = columnMapping.value.system ? row[columnMapping.value.system]?.toString().trim() : null
 
-                // Apply mappings
                 if (systemName && systemMapping.value[systemName]) {
                     systemName = systemMapping.value[systemName]
                 }
 
-                // Determine DB System ID
                 const isUnmappable = systemName && unmatchedSystems.value.includes(systemName)
                 const dbSystem = !isUnmappable ? systemMap[systemName?.toLowerCase()] || null : null
                 const system_id = dbSystem?.id || null
 
-                // If we have a valid system_id, we need to check if this code exists in DB
+                // with a system_id we can check the code exists
                 if (system_id) {
                     uniqueCodesToFetch.add(code)
                 }
 
-                // Store pre-calculated data to avoid re-doing logic in step 4
                 rowsToProcess.push({
                     rawRow: row,
                     code,
@@ -321,16 +311,13 @@ export function useCodeImport() {
                 })
             }
 
-            // 3. BATCH FETCH: Get all relevant codes from DB in one go
-            // We fetch any code string that appeared in the file.
-            // We will filter by system_id in memory later.
+            // fetch every code string in the file in one go, then filter by system in memory
             const dbCodeLookup = new Map() // Key: "system_id:code", Value: database_id
 
             if (uniqueCodesToFetch.size > 0) {
                 const allCodes = Array.from(uniqueCodesToFetch)
 
-                // Chunking: Supabase URL limit might fail if checking 5000+ codes at once.
-                // We split into chunks of 1000 to be safe.
+                // chunked, as a big .in() blows the URL length limit
                 const chunkSize = 1000
                 for (let i = 0; i < allCodes.length; i += chunkSize) {
                     const chunk = allCodes.slice(i, i + chunkSize)
@@ -344,8 +331,7 @@ export function useCodeImport() {
 
                     if (data) {
                         data.forEach(dbRow => {
-                            // Create a composite key to ensure uniqueness across systems
-                            // e.g. "123:A01" (System 123, Code A01)
+                            // key on system:code, e.g. "123:A01"
                             const key = `${dbRow.system_id}:${dbRow.code}`
                             dbCodeLookup.set(key, dbRow.id)
                         })
@@ -353,11 +339,9 @@ export function useCodeImport() {
                 }
             }
 
-            // 4. Map final data using in-memory lookup (Instant)
             const mappedData = rowsToProcess.map(item => {
                 let code_id = null
 
-                // Perform O(1) lookup
                 if (item.system_id) {
                     const key = `${item.system_id}:${item.code}`
                     code_id = dbCodeLookup.get(key) || null
@@ -386,7 +370,7 @@ export function useCodeImport() {
     }
 
 
-    // --- WATCHERS ---
+    // Watchers
     watch(() => columnMapping.value.system, () => {
         if (rawImportedData.value.length > 0) {
             checkSystemMatches()

@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
-// Import your views (we will create these next)
 import HomeView from '../views/HomeView.vue';
 import AccordionView from '../views/AccordionView.vue';
 import DocumentationView from "@/views/DocumentationView.vue";

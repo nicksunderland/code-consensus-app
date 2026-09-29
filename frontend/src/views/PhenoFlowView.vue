@@ -636,7 +636,7 @@ watch(
 </template>
 
 <style scoped>
-/* PAGE LAYOUT */
+/* layout */
 .page-wrapper {
   background-color: #f8f9fa; /* Matches HomeView bg */
   min-height: 100vh;
@@ -652,7 +652,7 @@ watch(
   flex: 1; /* Pushes footer down */
 }
 
-/* HEADER */
+/* header */
 .header-section h1 {
   font-size: 2rem;
   margin-top: 0;
@@ -746,7 +746,7 @@ watch(
   padding-top: 0.3rem;
 }
 
-/* EDITOR CARD (The White Box) */
+/* editor card */
 .editor-card {
   display: flex;
   flex-direction: column;
@@ -798,7 +798,7 @@ watch(
   min-height: 0;
 }
 
-/* LEFT SIDEBAR */
+/* sidebar */
 .controls-sidebar {
   width: 300px; /* Fixed width */
   padding: 1.5rem;
@@ -875,7 +875,7 @@ watch(
   font-size: 0.95rem;
 }
 
-/* RIGHT CANVAS */
+/* canvas */
 .flow-canvas-wrapper {
   flex-grow: 1;
   background-color: #f8fafc; /* Very light slate bg for graph */
@@ -1025,7 +1025,7 @@ watch(
 }
 
 
-/* VueFlow Specific Overrides to match theme */
+/* Vue Flow overrides to match the theme */
 :deep(.vue-flow__minimap) {
   border-radius: 8px;
   border: 1px solid #e2e8f0;

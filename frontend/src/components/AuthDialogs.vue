@@ -8,7 +8,7 @@ import Button from 'primevue/button'
 import Divider from 'primevue/divider'
 import { useAuth } from '@/composables/auth/useAuth.js'
 
-// --- composables ---
+// composables
 const {
   currentDialog,
   closeDialog,
@@ -34,7 +34,7 @@ const magicForm = ref({
   email: ''
 })
 
-// --- Computed dialog visibility ---
+// Computed dialog visibility
 const loginVisible = computed({
   get: () => currentDialog.value === 'login',
   set: val => { if (!val) closeDialog() }
@@ -48,7 +48,7 @@ const signupVisible = computed({
   set: val => { if (!val) closeDialog() }
 })
 
-// --- Actions ---
+// Actions
 const login = async () => {
   const { email, password } = loginForm.value
   if (!email || !password) return

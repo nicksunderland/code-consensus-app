@@ -1,4 +1,3 @@
-// useCodeSystems.js
 import { ref } from 'vue'
 import { supabase } from "@/composables/shared/useSupabase.js";
 
@@ -8,7 +7,7 @@ const isLoaded = ref(false)
 export function useCodeSystems() {
 
   const loadCodeSystems = async () => {
-    // 2. Prevent re-fetching if we already have data
+    // cached after the first load
     if (isLoaded.value) return
 
     const { data, error } = await supabase
