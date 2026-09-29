@@ -7,10 +7,11 @@ Nicholas Sunderland (nicholas.sunderland@bristol.ac.uk), HERMES. © HERMES.
 [![Made with Supabase](https://supabase.com/badge-made-with-supabase.svg)](https://supabase.com)
 
 ### Structure
-- `frontend/` Vue 3 + Vite + PrimeVue, on Netlify. Routes: `/` home, `/accordion` consensus tool, `/flow` PhenoFlow, `/examples`, `/docs`, `/terms`.
+- `frontend/` Vue 3 + Vite + PrimeVue, on Netlify. Routes: `/` home, `/project/:id` project overview, `/accordion` consensus tool, `/flow` PhenoFlow, `/examples`, `/docs`, `/terms`.
 - `backend/main.py` FastAPI, on Fly.io. Tree browsing, code search, co-occurrence/count metrics and the public examples endpoints.
 - `backend/db/schema.sql` Supabase schema (codes, projects, phenotypes, selections, consensus, RLS).
 - `backend/db/` data loading and project seeding scripts (below).
+- `backend/db/migrations/` SQL changes to run in the Supabase SQL editor, in date order.
 
 Most CRUD goes straight from the frontend to Supabase under RLS. The backend uses the service-role connection for the heavy read-only queries.
 

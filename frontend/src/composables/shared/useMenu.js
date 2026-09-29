@@ -27,12 +27,7 @@ export function useMenu() {
               ...projects.projects.value.map(p => ({
                 label: p.name,
                 icon: projects.currentProject.value?.id === p.id ? 'pi pi-folder-open' : 'pi pi-folder',
-                command: () => {
-                    phenotypes.emptyPhenotypes()
-                    projects.selectProject(p)
-                    phenotypes.fetchPhenotypes()
-                    router.push('/accordion')
-                }
+                command: () => router.push(`/project/${p.id}`)
               }))
             ]
 
@@ -84,6 +79,7 @@ export function useMenu() {
         // consensus-mode only
         const toolItems = [
             { label: currentProject ? `Projects (${currentProject.name})` : 'Projects', icon: 'pi pi-briefcase', items: projectItems },
+            ...(currentProject ? [{ label: 'Overview', icon: 'pi pi-table', route: `/project/${currentProject.id}` }] : []),
             { label: 'Phenotypes', icon: 'pi pi-save', items: phenotypeItems },
             // PhenoFlow
             { label: 'Pheno Flow', icon: 'pi pi-sitemap', route: '/flow' }
@@ -94,9 +90,9 @@ export function useMenu() {
             accountItems
         ];
 
-        // tool items show on /accordion and /flow
+        // tool items show on /accordion, /flow and the project pages
         const consensusRoutes = ['/accordion', '/flow'];
-        const isConsensusMode = consensusRoutes.includes(route.path);
+        const isConsensusMode = consensusRoutes.includes(route.path) || route.path.startsWith('/project/');
 
         return isConsensusMode
             ? [...baseNav, ...toolItems, accountItems]

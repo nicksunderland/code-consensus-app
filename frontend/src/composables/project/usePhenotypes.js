@@ -73,6 +73,9 @@ export function usePhenotypes() {
 
         if (error) return emitError("Load failed", error.message)
 
+        // the project may have changed while this was loading
+        if (projects.currentProject.value?.id !== projectId) return
+
         phenotypes.value = data
     }
 

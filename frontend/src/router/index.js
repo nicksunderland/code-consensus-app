@@ -6,6 +6,7 @@ import DocumentationView from "@/views/DocumentationView.vue";
 import PhenoFlowView from "@/views/PhenoFlowView.vue";
 import ExamplesView from "@/views/Examples.vue";
 import TermsView from "@/views/Terms.vue";
+import ProjectView from "@/views/ProjectView.vue";
 import { useHead } from '@unhead/vue';
 
 const router = createRouter({
@@ -22,6 +23,12 @@ const router = createRouter({
       name: 'accordion',
       component: AccordionView,
       meta: { title: 'Consensus Tool' }
+    },
+    {
+      path: '/project/:id',
+      name: 'project',
+      component: ProjectView,
+      meta: { title: 'Project' }
     },
     {
       path: '/flow',
