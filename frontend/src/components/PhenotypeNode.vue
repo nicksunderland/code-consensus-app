@@ -51,7 +51,9 @@ const updateComment = (event) => {
       title="Remove from canvas"
       @click="remove"
     >
-      ✕
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        <path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
     </button>
     <div class="ph-header">
       <button class="comment-toggle" type="button" @click="toggle" title="Add comment">
@@ -187,8 +189,9 @@ const updateComment = (event) => {
   border: 1px solid #fecaca;
   background: #fff;
   color: #c53030;
-  font-size: 0.7rem;
-  line-height: 1;
+  padding: 0;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   opacity: 0;
@@ -199,6 +202,10 @@ const updateComment = (event) => {
 .node-delete.visible,
 .ph-node:hover .node-delete {
   opacity: 1;
+}
+
+.node-delete svg {
+  display: block;
 }
 
 .node-delete:hover {

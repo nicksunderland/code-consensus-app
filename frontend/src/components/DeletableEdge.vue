@@ -38,7 +38,9 @@ const remove = (event) => {
       title="Remove connection"
       @click="remove"
     >
-      ✕
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+        <path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
     </button>
   </EdgeLabelRenderer>
 </template>
@@ -53,10 +55,15 @@ const remove = (event) => {
   border: 1px solid #fecaca;
   background: #fff;
   color: #c53030;
-  font-size: 0.7rem;
-  line-height: 1;
+  padding: 0;
+  display: grid;
+  place-items: center;
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.edge-delete svg {
+  display: block;
 }
 
 .edge-delete:hover {
