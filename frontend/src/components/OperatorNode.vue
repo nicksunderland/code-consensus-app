@@ -1,12 +1,22 @@
 <script setup>
 import { computed } from 'vue';
-import { Handle } from '@vue-flow/core';
+import { Handle, useVueFlow } from '@vue-flow/core';
 
 const props = defineProps({
+  id: { type: String, default: '' }, // empty for the palette chips
   data: { type: Object, default: () => ({}) },
   label: { type: String, default: '' },
+  selected: { type: Boolean, default: false },
   showHandles: { type: Boolean, default: true }
 });
+
+const { removeNodes } = useVueFlow();
+
+// also removes any connections to this node
+const remove = (event) => {
+  event.stopPropagation();
+  removeNodes([props.id]);
+};
 
 const operatorLabel = computed(() => props.data?.operator || props.label || 'OP');
 const operatorSlug = computed(() =>
@@ -55,6 +65,16 @@ const handleConfigs = computed(() => {
 
 <template>
   <div class="op-shell">
+    <button
+      type="button"
+      v-if="id"
+      class="node-delete nodrag"
+      :class="{ visible: selected }"
+      title="Remove from canvas"
+      @click="remove"
+    >
+      ✕
+    </button>
     <template v-if="showHandles">
       <Handle
         v-for="config in handleConfigs"
@@ -207,5 +227,41 @@ const handleConfigs = computed(() => {
   right: 12px;
   top: 50%;
   transform: translate(50%, -50%);
+}
+
+/* remove button, shown on hover or when the node is selected */
+.node-delete {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #c53030;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 2;
+}
+
+.node-delete.visible,
+.op-shell:hover .node-delete {
+  opacity: 1;
+}
+
+/* sit on the upper-right edge of the diamond rather than the corner of the shell */
+.op-shell .node-delete {
+  top: 23px;
+  right: 26px;
+}
+
+.node-delete:hover {
+  background: #fef2f2;
+  color: #9b2c2c;
 }
 </style>

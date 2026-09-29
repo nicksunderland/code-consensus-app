@@ -23,6 +23,7 @@ import { usePhenoflows } from '@/composables/phenoflow/usePhenoflows.js';
 import { useProjects } from '@/composables/project/useProjects.js';
 import OperatorNode from '@/components/OperatorNode.vue';
 import PhenotypeNode from '@/components/PhenotypeNode.vue';
+import DeletableEdge from '@/components/DeletableEdge.vue';
 import Footer from "@/components/Footer.vue";
 import { ref, watch, watchEffect } from 'vue';
 
@@ -54,6 +55,11 @@ const { currentProject } = useProjects();
 const confirm = useConfirm();
 const flowInstance = ref(null);
 const { project } = useVueFlow();
+
+// edges are saved with type 'default', so override that rather than adding a new type
+const edgeTypes = {
+  default: DeletableEdge
+};
 
 const nodeTypes = {
   operator: OperatorNode,
@@ -569,6 +575,10 @@ watch(
                 <i class="pi pi-share-alt text-primary"></i>
                 <span>Connections: <strong>{{ edges.length }}</strong></span>
               </div>
+              <div class="stat-item">
+                <i class="pi pi-info-circle"></i>
+                <span>Select a node or connection and press Delete, or use its ✕</span>
+              </div>
             </div>
           </div>
 
@@ -578,6 +588,8 @@ watch(
               :edges="edges"
               :is-valid-connection="isValidConnection"
               :node-types="nodeTypes"
+              :edge-types="edgeTypes"
+              :delete-key-code="['Backspace', 'Delete']"
               @nodesChange="onNodesChange"
               @edgesChange="onEdgesChange"
               @connect="onConnectHandler"

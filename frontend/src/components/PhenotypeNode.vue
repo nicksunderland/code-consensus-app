@@ -1,13 +1,23 @@
 <script setup>
-import { Handle } from '@vue-flow/core';
+import { Handle, useVueFlow } from '@vue-flow/core';
 import { ref, watch } from 'vue';
 import Textarea from 'primevue/textarea';
 import FloatLabel from 'primevue/floatlabel';
 
 const props = defineProps({
+  id: { type: String, required: true },
   data: { type: Object, default: () => ({}) },
-  label: { type: String, default: '' }
+  label: { type: String, default: '' },
+  selected: { type: Boolean, default: false }
 });
+
+const { removeNodes } = useVueFlow();
+
+// also removes any connections to this node
+const remove = (event) => {
+  event.stopPropagation();
+  removeNodes([props.id]);
+};
 
 const isOpen = ref(false);
 const comment = ref(props.data?.comment || '');
@@ -34,6 +44,15 @@ const updateComment = (event) => {
 
 <template>
   <div class="ph-node">
+    <button
+      type="button"
+      class="node-delete nodrag"
+      :class="{ visible: selected }"
+      title="Remove from canvas"
+      @click="remove"
+    >
+      ✕
+    </button>
     <div class="ph-header">
       <button class="comment-toggle" type="button" @click="toggle" title="Add comment">
         <span class="chevron" :class="{ open: isOpen }">
@@ -155,5 +174,35 @@ const updateComment = (event) => {
 :deep(.handle.out) {
   border-color: #10b981;
   box-shadow: 0 0 0 6px rgba(16, 185, 129, 0.18);
+}
+
+/* remove button, shown on hover or when the node is selected */
+.node-delete {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #c53030;
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 2;
+}
+
+.node-delete.visible,
+.ph-node:hover .node-delete {
+  opacity: 1;
+}
+
+.node-delete:hover {
+  background: #fef2f2;
+  color: #9b2c2c;
 }
 </style>
