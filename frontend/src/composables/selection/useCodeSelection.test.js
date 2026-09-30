@@ -4,6 +4,7 @@ import { createNotificationsMock } from '../../../test/mocks/notifications.mock.
 
 describe('useCodeSelection', () => {
   let upsertMock
+  let rpcMock
   let phenotypeUpdate
   let storedFinalizedAt
   let useCodeSelection
@@ -55,6 +56,7 @@ describe('useCodeSelection', () => {
 
     const upsert = vi.fn().mockResolvedValue({ error: null })
     upsertMock = upsert
+    rpcMock = vi.fn().mockResolvedValue({ error: null })
     storedFinalizedAt = null
     phenotypeUpdate = vi.fn((values) => {
       storedFinalizedAt = values.finalized_at
@@ -122,7 +124,7 @@ describe('useCodeSelection', () => {
             eq: vi.fn().mockResolvedValue({ data: [], error: null })
           }
         }),
-        rpc: vi.fn().mockResolvedValue({ error: null })
+        rpc: rpcMock
       }
       return { supabase: supabaseMock }
     })
@@ -154,5 +156,57 @@ describe('useCodeSelection', () => {
     await unlockConsensus()
     expect(phenotypeUpdate).toHaveBeenLastCalledWith({ finalized_at: null, finalized_by: null })
     expect(isFinalized.value).toBe(false)
+  })
+
+  describe('canonical codes', () => {
+    beforeEach(() => {
+      treeState.nodes.value = [
+        { key: '1', data: { code: 'A', description: 'a', system: 'ICD' }, children: [] },
+        { key: '2', data: { code: 'B', description: 'b', system: 'ICD' }, children: [] },
+        { key: '3', data: { code: 'C', description: 'c', system: 'OPCS' }, children: [] }
+      ]
+      treeState.searchNodeKeys.value = { '1': true, '2': true, '3': true }
+    })
+
+    const canonicalKeys = (rows) => rows.filter(r => r.consensus_canonical).map(r => r.key).sort()
+
+    it('allows only one canonical code per system', () => {
+      const { tableRows, updateConsensusSelection, updateCanonicalSelection } = useCodeSelection()
+      ;['1', '2', '3'].forEach(k => updateConsensusSelection(k, true))
+
+      updateCanonicalSelection('1', true)
+      updateCanonicalSelection('3', true)
+      expect(canonicalKeys(tableRows.value)).toEqual(['1', '3'])
+
+      updateCanonicalSelection('2', true)
+      expect(canonicalKeys(tableRows.value)).toEqual(['2', '3'])
+    })
+
+    it('clears canonical when the code leaves the consensus', () => {
+      const { tableRows, updateConsensusSelection, updateCanonicalSelection } = useCodeSelection()
+      updateConsensusSelection('1', true)
+      updateCanonicalSelection('1', true)
+
+      updateConsensusSelection('1', false)
+      expect(canonicalKeys(tableRows.value)).toEqual([])
+    })
+
+    it('saves the whole consensus with canonical flags through the rpc', async () => {
+      const { saveConsensus, updateConsensusSelection, updateCanonicalSelection } = useCodeSelection()
+      updateConsensusSelection('1', true)
+      updateConsensusSelection('3', true)
+      updateCanonicalSelection('3', true)
+
+      await saveConsensus(false)
+
+      expect(upsertMock).not.toHaveBeenCalled()
+      expect(rpcMock).toHaveBeenCalledWith('save_phenotype_consensus', {
+        p_phenotype_id: 'ph1',
+        p_codes: [
+          expect.objectContaining({ code_type: 'standard', code_id: 1, system_name: 'ICD', is_canonical: false }),
+          expect.objectContaining({ code_type: 'standard', code_id: 3, system_name: 'OPCS', is_canonical: true })
+        ]
+      })
+    })
   })
 })

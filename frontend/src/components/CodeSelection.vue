@@ -38,6 +38,7 @@ const {
   getTeamMemberStatus,
   updateConsensusSelection,
   updateConsensusComment,
+  updateCanonicalSelection,
   saveConsensus,
   unlockConsensus,
   clearImportedCodes,
@@ -390,6 +391,23 @@ const isProjectOwner = computed(() => {
                     :disabled="isFinalized"
                     :modelValue="data.consensus_selected"
                     @update:modelValue="(val) => updateConsensusSelection(data.key, val)"
+                />
+            </template>
+        </Column>
+
+        <Column
+            v-if="isReviewMode"
+            header="Canonical" style="width: 6rem; text-align: center"
+        >
+            <template #header>
+                <i class="pi pi-info-circle" v-tooltip.top="'One canonical code per coding system. The code must be in the final consensus.'"></i>
+            </template>
+            <template #body="{ data }">
+                <Checkbox
+                    :binary="true"
+                    :disabled="isFinalized || !data.consensus_selected"
+                    :modelValue="data.consensus_canonical"
+                    @update:modelValue="(val) => updateCanonicalSelection(data.key, val)"
                 />
             </template>
         </Column>

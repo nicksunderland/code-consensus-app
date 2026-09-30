@@ -45,7 +45,8 @@ const getConsensusHash = () => {
         .map(r => ({
             k: r.key,
             s: r.consensus_selected,
-            c: r.consensus_comment || ''
+            c: r.consensus_comment || '',
+            n: !!r.consensus_canonical
         }))
         .sort((a, b) => a.k.localeCompare(b.k));
     return JSON.stringify(simplified);
@@ -61,7 +62,11 @@ const hasUnsavedConsensusChanges = computed(() => {
 });
 
 const userComments = ref({});
-const consensusState = ref({}); // { [codeId]: { selected: boolean, comment: string } }
+
+// canonical codes are grouped by system name; orphan codes have no system_id
+const systemGroup = (row) => row?.system || 'Custom';
+
+const consensusState = ref({}); // { [codeId]: { selected: boolean, comment: string, canonical: boolean } }
 const tableRows = computed(() => {
     // keyed by code id so each code appears once
     const rowsMap = new Map();
@@ -76,7 +81,7 @@ const tableRows = computed(() => {
             const found = !!searchNodeKeys.value[key]; // does the key exist in search keys
 
             if (selected || found) {
-                const consensusData = consensusState.value[key] || { selected: false, comment: '' }; // defaults
+                const consensusData = consensusState.value[key] || { selected: false, comment: '', canonical: false }; // defaults
                 const codeComment = userComments.value[key] || ''; // default
                 rowsMap.set(key, {
                     key: key,
@@ -84,6 +89,7 @@ const tableRows = computed(() => {
                     comment: codeComment, // fallback as userComments[key] may not have an entry
                     consensus_selected: consensusData.selected, // no fallback; defaults defined above
                     consensus_comment: consensusData.comment, // no fallback; defaults defined above
+                    consensus_canonical: !!consensusData.canonical,
                     found: found, // no fallback; defaults defined above
                     imported: false, // Default for tree nodes; might be updated below if also in importedData
                     code: node.data.code, // nodes are well-defined to have these fields
@@ -103,7 +109,7 @@ const tableRows = computed(() => {
             const key = String(item.key);
             const selected = !!selectedNodeKeys.value[key]; // does the key exist in selected keys, may do if imported a mapped code rather than an orphan code
             const found = !!searchNodeKeys.value[key]; // does the key exist in search keys, may do if imported a mapped code rather than an orphan code
-            const consensusData = consensusState.value[key] || { selected: false, comment: '' }; // defaults
+            const consensusData = consensusState.value[key] || { selected: false, comment: '', canonical: false }; // defaults
             const codeComment = userComments.value[key] || ''; // default
 
             if (rowsMap.has(key)) {
@@ -119,6 +125,7 @@ const tableRows = computed(() => {
                     comment: codeComment,
                     consensus_selected: consensusData.selected,
                     consensus_comment: consensusData.comment,
+                    consensus_canonical: !!consensusData.canonical,
                     found,
                     imported: true
                 })
@@ -156,14 +163,34 @@ export function useCodeSelection() {
         selectedNodeKeys.value = newKeys;
     };
 
+    const ensureConsensusEntry = (key) => {
+        if (!consensusState.value[key]) consensusState.value[key] = { selected: false, comment: '', canonical: false };
+        return consensusState.value[key];
+    };
+
     const updateConsensusSelection = (key, val) => {
-        if (!consensusState.value[key]) consensusState.value[key] = { selected: false, comment: '' };
-        consensusState.value[key].selected = val;
+        const entry = ensureConsensusEntry(key);
+        entry.selected = val;
+        // a code can only be canonical while it's in the consensus
+        if (!val) entry.canonical = false;
     };
 
     const updateConsensusComment = (key, val) => {
-        if (!consensusState.value[key]) consensusState.value[key] = { selected: false, comment: '' };
-        consensusState.value[key].comment = val;
+        ensureConsensusEntry(key).comment = val;
+    };
+
+    // one canonical code per coding system, so ticking one clears the others in that system
+    const updateCanonicalSelection = (key, val) => {
+        if (val) {
+            const row = tableRows.value.find(r => r.key === String(key));
+            const system = systemGroup(row);
+            tableRows.value.forEach(r => {
+                if (r.key !== String(key) && r.consensus_canonical && systemGroup(r) === system) {
+                    consensusState.value[r.key].canonical = false;
+                }
+            });
+        }
+        ensureConsensusEntry(key).canonical = val;
     };
 
     const selectionState = computed(() => {
@@ -517,7 +544,7 @@ export function useCodeSelection() {
         const [{ data, error }, { data: pheno }] = await Promise.all([
             supabase
                 .from('user_code_selections')
-                .select('code_type, code_id, orphan_id, consensus_comments, is_consensus')
+                .select('code_type, code_id, orphan_id, consensus_comments, is_consensus, is_canonical')
                 .eq('phenotype_id', phenotypeId),
             supabase
                 .from('phenotypes')
@@ -536,7 +563,8 @@ export function useCodeSelection() {
             const key = String(row.code_id ?? row.orphan_id);
             map[key] = {
                 selected: !!row.is_consensus,
-                comment: row.consensus_comments || ''
+                comment: row.consensus_comments || '',
+                canonical: !!row.is_canonical
             };
         });
         consensusState.value = map;
@@ -563,94 +591,47 @@ export function useCodeSelection() {
 
         const finalRows = tableRows.value.filter(r => r.consensus_selected);
 
+        const canonicalSystems = finalRows.filter(r => r.consensus_canonical).map(systemGroup);
+        if (new Set(canonicalSystems).size !== canonicalSystems.length) {
+            emitError("Save Failed", "Only one canonical code is allowed per coding system.");
+            isSaving.value = false;
+            return;
+        }
+
         try {
-            const rowLookup = Object.fromEntries(
-                tableRows.value.map(r => [String(r.key), r])
-            );
-            const desiredMap = new Map();
-            finalRows.forEach(row => {
-                desiredMap.set(row.key, row.consensus_comment || '');
+            const codes = finalRows.map(row => {
+                const key = String(row.key);
+                const isOrphan = key.startsWith('ORPHAN');
+                return {
+                    code_type: isOrphan ? 'orphan' : 'standard',
+                    code_id: isOrphan ? null : parseInt(key),
+                    orphan_id: isOrphan ? key : null,
+                    code_text: row.code || null,
+                    code_description: row.description || null,
+                    system_name: row.system || null,
+                    consensus_comments: row.consensus_comment || '',
+                    is_canonical: !!row.consensus_canonical
+                };
+            }).filter(c => c.code_type === 'orphan' || !Number.isNaN(c.code_id));
+
+            // writes every rater's rows in one go, so the consensus is the same for everyone
+            const { error } = await supabase.rpc('save_phenotype_consensus', {
+                p_phenotype_id: phenotypeId,
+                p_codes: codes
             });
-
-            const existingKeys = Object.keys(consensusState.value || {});
-            const allKeys = new Set([...existingKeys, ...Array.from(desiredMap.keys())]);
-            const existingComments = { ...(consensusState.value || {}) };
-
-            const standardRows = [];
-            const orphanRows = [];
-
-            allKeys.forEach((key) => {
-                const isOrphan = typeof key === 'string' && key.startsWith('ORPHAN');
-                const isSelected = desiredMap.has(key);
-                const comment = desiredMap.get(key) ?? existingComments[key]?.comment ?? '';
-                if (isOrphan) {
-                    const sourceRow = rowLookup[key] || {};
-                    orphanRows.push({
-                        phenotype_id: phenotypeId,
-                        user_id: userId,
-                        code_type: 'orphan',
-                        orphan_id: key,
-                        code_text: sourceRow.code || null,
-                        code_description: sourceRow.description || null,
-                        system_name: sourceRow.system || null,
-                        is_consensus: isSelected,
-                        consensus_comments: comment
-                    });
-                } else {
-                    const codeId = parseInt(key);
-                    if (!Number.isNaN(codeId)) {
-                        const sourceRow = rowLookup[key] || {};
-                        standardRows.push({
-                            phenotype_id: phenotypeId,
-                            user_id: userId,
-                            code_type: 'standard',
-                            code_id: codeId,
-                            code_text: sourceRow.code || null,
-                            code_description: sourceRow.description || null,
-                            system_name: sourceRow.system || null,
-                            is_consensus: isSelected,
-                            consensus_comments: comment
-                        });
-                    }
-                }
-            });
-
-            if (standardRows.length > 0) {
-                console.debug('[consensus] upsert standard', standardRows);
-                const { error } = await supabase
-                    .from('user_code_selections')
-                    .upsert(standardRows, { onConflict: 'phenotype_id, code_id, user_id' });
-                if (error) throw error;
-            }
-
-            if (orphanRows.length > 0) {
-                console.debug('[consensus] upsert orphan', orphanRows);
-                const { error } = await supabase
-                    .from('user_code_selections')
-                    .upsert(orphanRows, { onConflict: 'phenotype_id, orphan_id, user_id' });
-                if (error) throw error;
-            }
-
-            consensusState.value = Object.fromEntries(
-                Array.from(allKeys).map((k) => {
-                    const selected = desiredMap.has(k);
-                    const comment = desiredMap.get(k) ?? existingComments[k]?.comment ?? '';
-                    return [k, { selected, comment }];
-                })
-            );
-            lastSavedConsensusHash.value = getConsensusHash();
+            if (error) throw error;
 
             if (finalize) await setFinalized(phenotypeId, true);
 
             const action = finalize ? "Finalized" : "Saved";
-            emitSuccess(action, `${action} consensus for ${finalRows.length} codes.`);
+            emitSuccess(action, `${action} consensus for ${codes.length} codes.`);
 
             await resetDownloadCache(phenotypeId);
             await fetchConsensus();
 
         } catch (err) {
             console.error(err);
-            emitError("Error", "Failed to save consensus.");
+            emitError("Error", err?.message || "Failed to save consensus.");
         } finally {
             isSaving.value = false;
         }
@@ -847,6 +828,7 @@ export function useCodeSelection() {
         getTeamMemberStatus,
         updateConsensusSelection,
         updateConsensusComment,
+        updateCanonicalSelection,
         clearSelectionState,
         saveConsensus,
         unlockConsensus,

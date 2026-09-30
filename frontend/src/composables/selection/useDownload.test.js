@@ -25,7 +25,7 @@ const mockTables = (pheno = {}) => {
           select: () => ({
             eq: () => Promise.resolve({
               data: [
-                { code_type: 'standard', code_id: 1, code_text: 'A', code_description: 'Desc', system_name: 'ICD', consensus_comments: '' },
+                { code_type: 'standard', code_id: 1, code_text: 'A', code_description: 'Desc', system_name: 'ICD', consensus_comments: '', is_canonical: true },
                 { code_type: 'orphan', orphan_id: 'O1', code_text: 'X', code_description: 'Cust', system_name: 'Custom', consensus_comments: '' }
               ], error: null
             })
@@ -77,5 +77,22 @@ describe('useDownload', () => {
     await fetchExportData('ph2')
     expect(isPhenotypeFinalized.value).toBe(true)
     expect(displayContent.value).toContain('2026-09-29T10:00:00Z')
+  })
+
+  it('includes is_canonical in every format', async () => {
+    mockTables()
+    const { fetchExportData, selectedFormat, displayContent } = useDownload()
+    await fetchExportData('ph3')
+
+    const codes = JSON.parse(displayContent.value).codes
+    expect(codes.map(c => c.is_canonical)).toEqual([true, false])
+
+    selectedFormat.value = 'yaml'
+    expect(displayContent.value).toContain('is_canonical: true')
+    expect(displayContent.value).toContain('is_canonical: false')
+
+    selectedFormat.value = 'text'
+    expect(displayContent.value).toContain('CODE\tSYSTEM\tIS_CANONICAL')
+    expect(displayContent.value).toContain('A\tICD\ttrue\t')
   })
 })

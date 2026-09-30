@@ -46,7 +46,7 @@ export function useDownload() {
 
             const { data: consensus, error: consensusError } = await supabase
                 .from('phenotype_consensus_codes')
-                .select('code_type, code_id, orphan_id, code_text, code_description, system_name, consensus_comments')
+                .select('code_type, code_id, orphan_id, code_text, code_description, system_name, consensus_comments, is_canonical')
                 .eq('phenotype_id', phenotypeId)
 
             if (consensusError) {
@@ -146,6 +146,7 @@ export function useDownload() {
                         system_description: detail?.code_systems?.description || "",
                         system_url: detail?.code_systems?.url || "",
                         consensus_comments: row.consensus_comments || "",
+                        is_canonical: !!row.is_canonical,
                         finalized_at: null,
                         is_orphan: false
                     }
@@ -161,6 +162,7 @@ export function useDownload() {
                         sys?.description || "User-submitted custom code",
                     system_url: sys?.url || "",
                     consensus_comments: row.consensus_comments || "",
+                    is_canonical: !!row.is_canonical,
                     finalized_at: null,
                     is_orphan: true
                 }
@@ -281,6 +283,7 @@ export function useDownload() {
                 out += `  - code: "${c.code}"\n`
                 out += `    system: "${c.system}"\n`
                 out += `    description: "${c.description}"\n`
+                out += `    is_canonical: ${c.is_canonical}\n`
                 if (c.consensus_comments) out += `    consensus_comments: "${c.consensus_comments}"\n`
             })
             return out
@@ -288,9 +291,9 @@ export function useDownload() {
 
         text: (data) => {
             let out = getRichHeader('#')
-            out += `CODE\tSYSTEM\tDESCRIPTION\tCOMMENTS\n`
+            out += `CODE\tSYSTEM\tIS_CANONICAL\tDESCRIPTION\tCOMMENTS\n`
             data.codes.forEach(c => {
-                out += `${c.code}\t${c.system}\t${c.description}\t${c.consensus_comments}\n`
+                out += `${c.code}\t${c.system}\t${c.is_canonical}\t${c.description}\t${c.consensus_comments}\n`
             })
             return out
         }
